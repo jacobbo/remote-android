@@ -83,7 +83,8 @@ services:
 
   # Cloudflare DDNS — keeps the proxied web-UI record AND the DNS-only TURN
   # record pointed at this host's current public IP. A single container handles
-  # both records via comma-separated DOMAINS + per-domain PROXIED.
+  # both records via comma-separated DOMAINS + a PROXIED boolean expression
+  # (favonia uses an `is(<fqdn>)` syntax to flip per-domain).
   #
   # Enabled only under the `prod` profile so dev runs skip it.
   ddns:
@@ -95,7 +96,7 @@ services:
     environment:
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - DOMAINS=${CLOUDFLARE_DOMAINS}
-      - PROXIED=${CLOUDFLARE_PROXIED:-false}
+      - PROXIED=${PROXIED:-false}
       - IP4_PROVIDER=cloudflare.trace
     restart: unless-stopped
     networks:
