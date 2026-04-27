@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RemoteDesktop Agent</string>
+    <string name="accessibility_service_label">RemoteDesktop Input Bridge</string>
+    <string name="accessibility_service_description">Allows the RemoteDesktop agent to inject taps, swipes, and key events on behalf of an authorized remote viewer.</string>
+
+    <string name="title_status">Agent status</string>
+    <string name="status_unpaired">Not paired</string>
+    <string name="status_paired">Paired as %1$s</string>
+    <string name="status_running">Running — connected to hub</string>
+    <string name="status_stopped">Stopped</string>
+
+    <string name="pair_hint">Open the Pair Device page in the web UI on the same network and scan the QR code shown there.</string>
+
+    <string name="action_scan_qr">Scan QR to pair</string>
+    <string name="action_start">Start agent</string>
+    <string name="action_stop">Stop agent</string>
+    <string name="action_unpair">Unpair (forget keys)</string>
+    <string name="action_open_accessibility">Enable input injection</string>
+    <string name="action_cancel">Cancel</string>
+
+    <string name="scan_qr_hint">Point the camera at the pairing QR code</string>
+    <string name="scan_camera_denied">Camera permission is required to scan the pairing QR code.</string>
+    <string name="scan_invalid_qr">That QR code is not a RemoteDesktop pairing token.</string>
+
+    <string name="notif_channel_agent">Agent</string>
+    <string name="notif_running_title">RemoteDesktop agent running</string>
+    <string name="notif_running_text">Connected to %1$s</string>
+    <string name="notif_capturing_title">Screen sharing active</string>
+    <string name="notif_capturing_text">Sharing screen via %1$s</string>
+
+    <string name="warn_accessibility_off">Input injection is not enabled. Tap %1$s to grant.</string>
+    <string name="error_pair_failed">Pairing failed: %1$s</string>
+</resources>

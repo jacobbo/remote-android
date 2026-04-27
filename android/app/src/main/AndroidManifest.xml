@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Pre-fetch the ML Kit barcode model on first launch so the scanner is
+         ready offline. Without this the model downloads on first scan. -->
+    <queries>
+        <intent>
+            <action android:name="com.google.mlkit.vision.DEPENDENCY" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".AgentApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RemoteDesktopAgent"
+        tools:targetApi="34">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.RemoteDesktopAgent">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Long-running control plane: SignalR connection + status reporting.
+             Elevated to mediaProjection while a remote viewer is streaming. -->
+        <service
+            android:name=".control.AgentService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProjection" />
+
+        <!-- Transparent shim that pops the system MediaProjection consent
+             dialog on the service's behalf and feeds the result back via
+             MediaProjectionPermission. -->
+        <activity
+            android:name=".webrtc.MediaProjectionPermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Transparent shim launched on viewer attach: surfaces over the lock
+             screen, wakes the display, and asks the system to dismiss the
+             keyguard. Effective only for swipe-to-unlock devices; secured
+             locks still require a locally-present user. -->
+        <activity
+            android:name=".control.ScreenUnlockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Full-screen camera viewfinder for scanning the admin's pairing QR.
+             Returns the scanned URI to MainActivity via setResult. -->
+        <activity
+            android:name=".pair.PairScannerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.RemoteDesktopAgent" />
+
+        <!-- ML Kit barcode model auto-download on install. Avoids first-scan
+             latency and lets scanning work without network access. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode" />
+
+        <!-- AccessibilityService for input injection. The user must enable this
+             once via Settings → Accessibility → RemoteDesktop Agent. -->
+        <service
+            android:name=".input.InputAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+</manifest>

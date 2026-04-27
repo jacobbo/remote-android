@@ -1,0 +1,108 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=remotedesktop
+      - POSTGRES_USER=${DB_USER:-rdadmin}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rdadmin} -d remotedesktop"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - JWT_SECRET=${JWT_SECRET:-dev_secret_replace_in_production_at_least_32_chars}
+      - ConnectionStrings__Default=Host=db;Port=5432;Database=remotedesktop;Username=${DB_USER:-rdadmin};Password=${DB_PASSWORD:-changeme}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      # Pairing — phone-reachable URL embedded in the QR code (see .env.example).
+      - Pairing__BaseUrl=${PAIRING_BASE_URL:-}
+      # TURN — when unset the backend returns an empty iceServers list and
+      # WebRTC falls back to host candidates (LAN-only).
+      - Turn__Secret=${TURN_SECRET:-}
+      - Turn__Hostname=${TURN_HOSTNAME:-}
+      - Turn__Port=${TURN_PORT:-3478}
+      - Turn__Realm=${TURN_REALM:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+      - "${FRONTEND_TLS_PORT:-443}:443"
+    volumes:
+      # Bind-mounted into the container so the entrypoint script can switch
+      # to the TLS config when an origin.pem is present. Empty in dev →
+      # nginx stays on plain HTTP and 443 just sits idle.
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  # coturn TURN/STUN relay. Only used when remote browsers need to traverse
+  # NAT to reach the agent's WebRTC stream. Opt-in via the `prod` profile so
+  # `docker compose up` on a dev machine doesn't spin it up.
+  #
+  # network_mode: host is required because coturn negotiates relay endpoints
+  # by IP/port and Docker's bridge NAT mangles those addresses, breaking ICE
+  # for any client that isn't on the same bridge network. The relay range
+  # (49152–49252) and the listening ports (3478 UDP+TCP, 5349 TLS) need to be
+  # forwarded on your home router to this host.
+  turn:
+    profiles: ["prod"]
+    image: coturn/coturn:latest
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./certs:/etc/coturn/certs:ro
+    restart: unless-stopped
+
+  # Cloudflare DDNS — keeps the proxied web-UI record AND the DNS-only TURN
+  # record pointed at this host's current public IP. A single container handles
+  # both records via comma-separated DOMAINS + per-domain PROXIED.
+  #
+  # Enabled only under the `prod` profile so dev runs skip it.
+  ddns:
+    profiles: ["prod"]
+    image: favonia/cloudflare-ddns:latest
+    read_only: true
+    cap_drop: [all]
+    security_opt: [no-new-privileges:true]
+    environment:
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - DOMAINS=${CLOUDFLARE_DOMAINS}
+      - PROXIED=${CLOUDFLARE_PROXIED:-false}
+      - IP4_PROVIDER=cloudflare.trace
+    restart: unless-stopped
+    networks:
+      - app-net
+
+volumes:
+  pg-data:
+
+networks:
+  app-net:

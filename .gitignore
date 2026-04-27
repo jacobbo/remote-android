@@ -1,0 +1,52 @@
+# Node
+node_modules/
+dist/
+.vite/
+*.log
+.npm/
+.yarn/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Android / Gradle
+**/build/
+.gradle/
+local.properties
+*.iml
+*.apk
+*.aab
+*.ap_
+*.aar
+*.dex
+*.class
+*.jks
+*.keystore
+*.hprof
+captures/
+.cxx/
+.externalNativeBuild/
+.kotlin/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+pg-data/
+
+
