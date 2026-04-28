@@ -98,6 +98,7 @@ services:
       - DOMAINS=${CLOUDFLARE_DOMAINS}
       - PROXIED=${PROXIED:-false}
       - IP4_PROVIDER=cloudflare.trace
+      - IP6_PROVIDER=none
     restart: unless-stopped
     networks:
       - app-net
