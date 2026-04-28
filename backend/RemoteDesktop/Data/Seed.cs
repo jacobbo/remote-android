@@ -27,14 +27,8 @@ public static class Seed
         {
             var seeded = new[]
             {
-                Make("Pixel 8 Pro", "Google Pixel 8 Pro", DeviceStatus.Online, "Android 14", "192.168.1.41", "1080x2400",
-                    new DeviceRuntime { Battery = 87, Signal = 4, Orientation = "portrait" }),
-                Make("Galaxy S24", "Samsung Galaxy S24", DeviceStatus.Online, "Android 14", "192.168.1.42", "1080x2340",
-                    new DeviceRuntime { Battery = 54, Signal = 3, Orientation = "portrait" }),
                 Make("OnePlus 12", "OnePlus 12",         DeviceStatus.Online, "Android 14", "192.168.1.43", "1440x3168",
                     new DeviceRuntime { Battery = 23, Signal = 5, Orientation = "portrait" }),
-                Make("Pixel Fold", "Google Pixel Fold",  DeviceStatus.Idle,   "Android 14", "192.168.1.44", "1840x2208",
-                    new DeviceRuntime { Battery = 95, Signal = 4, Orientation = "landscape" }, lastSeenMinutesAgo: 2),
                 Make("Galaxy A54", "Samsung Galaxy A54", DeviceStatus.Offline,"Android 13", "192.168.1.45", "1080x2340",
                     new DeviceRuntime { Battery = 12, Signal = 0, Orientation = "portrait" }, lastSeenMinutesAgo: 60),
                 Make("Xiaomi 14", "Xiaomi 14",           DeviceStatus.Online, "Android 14", "192.168.1.46", "1200x2670",
