@@ -135,7 +135,7 @@ const DeviceCard=({d,onClick}:{d:Device;onClick:(d:Device)=>void})=>{
       <div style={{minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:"var(--f)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</div><div style={{fontSize:9,color:"var(--f3)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.model}</div></div>
     </div>
     <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6,flex:1}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><Dot s={d.status}/>{!on&&d.lastSeen&&<span style={{fontSize:8,color:"var(--f3)",fontFamily:"var(--m)"}}>{ago(d.lastSeen)}</span>}{on&&d.latency!=null&&<span style={{fontSize:8,color:d.latency>30?"var(--amb)":"var(--f3)",fontFamily:"var(--m)"}}>{d.latency}ms</span>}</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><Dot s={d.status}/>{!on&&d.lastSeen&&<span style={{fontSize:8,color:"var(--f3)",fontFamily:"var(--m)"}}>{ago(d.lastSeen)}</span>}</div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:4}}><Batt l={d.battery??0}/><span style={{fontSize:9,color:"var(--f3)"}}>{d.battery??0}%</span></div><Sig l={d.signal??0}/></div>
       <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:8,color:"var(--f3)"}}>{d.os}</span><span style={{fontSize:8,color:"var(--f3)",fontFamily:"var(--m)"}}>{d.ip}</span></div>
     </div>
@@ -171,18 +171,11 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
   const handleForceDisconnect=async()=>{try{await sfForceDisconnect(device.id)}catch{/* ignore */}};
 
   const[adminBusy,sAdminBusy]=useState(false);
-  const[rotatedKey,sRotatedKey]=useState<string|null>(null);
   const[confirmRevoke,sConfirmRevoke]=useState(false);
   const handleRevoke=async()=>{
     sAdminBusy(true);
     try{await api.revokeDevice(device.id);sConfirmRevoke(false)}
     catch(e:any){alert(e?.message??"Revoke failed")}
-    finally{sAdminBusy(false)}
-  };
-  const handleRotate=async()=>{
-    sAdminBusy(true);
-    try{const r=await api.rotateTrust(device.id);sRotatedKey(r.trustKey)}
-    catch(e:any){alert(e?.message??"Rotate failed")}
     finally{sAdminBusy(false)}
   };
 
@@ -212,7 +205,6 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
           <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10}}>
             <div style={{display:"flex",alignItems:"center",gap:4}}><Batt l={device.battery??0}/><span style={{fontSize:10,color:"var(--f3)"}}>{device.battery??0}%</span></div>
             <Sig l={device.signal??0}/>
-            {device.latency!=null&&device.status==="online"&&<span style={{fontSize:10,color:device.latency>30?"var(--amb)":"var(--f3)",fontFamily:"var(--m)"}}>{device.latency}ms</span>}
           </div>
         </div>
 
@@ -242,8 +234,7 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
 
         {isAdmin&&<div style={{background:"var(--b1)",borderRadius:9,border:"1px solid var(--br)",padding:16,display:"flex",flexDirection:"column",gap:8}}>
           <h3 style={{fontSize:11,fontWeight:600,color:"var(--f3)",textTransform:"uppercase",letterSpacing:".06em"}}>Admin</h3>
-          <div style={{fontSize:10,color:"var(--f3)",lineHeight:1.5}}>Rotate the trust key (the new value must be re-entered on the phone) or revoke the device entirely (ends any session and forces re-pairing).</div>
-          <Btn variant="ghost" onClick={handleRotate} disabled={adminBusy} full>Rotate trust key</Btn>
+          <div style={{fontSize:10,color:"var(--f3)",lineHeight:1.5}}>Revoke the device (ends any active session, marks trust as revoked, and forces re-pairing via QR).</div>
           <Btn variant="danger" onClick={()=>sConfirmRevoke(true)} disabled={adminBusy} full>Revoke device</Btn>
         </div>}
       </div>
@@ -275,18 +266,6 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
       onCancel={()=>sConfirmRevoke(false)}
       onConfirm={handleRevoke}
       busy={adminBusy}/>}
-    {rotatedKey&&<div onClick={()=>sRotatedKey(null)} style={{position:"fixed",inset:0,background:"rgba(7,8,10,.65)",backdropFilter:"blur(2px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:150,animation:"fi .15s"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:480,maxWidth:"calc(100vw - 48px)",background:"var(--b1)",borderRadius:10,border:"1px solid var(--br)",boxShadow:"0 18px 48px rgba(0,0,0,.5)",animation:"fu .2s"}}>
-        <div style={{padding:"14px 18px",borderBottom:"1px solid var(--br)"}}><h3 style={{fontSize:13,fontWeight:700,color:"var(--f)"}}>New trust key</h3></div>
-        <div style={{padding:18,display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{fontSize:11,color:"var(--f3)",lineHeight:1.5}}>The previous trust key has been invalidated. Hand this to the device — it will need to be re-paired (current implementation does not push the new key automatically).</div>
-          <code style={{padding:"10px 12px",borderRadius:6,background:"var(--b2)",border:"1px solid var(--br)",color:"var(--blue)",fontFamily:"var(--m)",fontSize:12,wordBreak:"break-all"}}>{rotatedKey}</code>
-        </div>
-        <div style={{padding:"12px 18px",borderTop:"1px solid var(--br)",display:"flex",justifyContent:"flex-end",gap:8}}>
-          <Btn variant="primary" onClick={()=>sRotatedKey(null)}>Done</Btn>
-        </div>
-      </div>
-    </div>}
   </div>
 };
 
@@ -294,8 +273,6 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
 // REMOTE VIEW
 // ─────────────────────────────────────────────────────
 const Ctrl=({children,label,onClick,danger=false}:any)=><button onClick={onClick} title={label} style={{all:"unset",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 9px",borderRadius:6,background:danger?"rgba(232,69,69,.08)":"var(--b2)",color:danger?"var(--red)":"var(--f2)",transition:"all .12s",fontSize:8,fontWeight:500}} onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background=danger?"rgba(232,69,69,.15)":"var(--bh)"} onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background=danger?"rgba(232,69,69,.08)":"var(--b2)"}>{children}<span>{label}</span></button>;
-
-const Metrics=({d}:{d:Device})=>{const M=({l,v,u,w}:any)=><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1}}><span style={{fontSize:8,color:"var(--f3)",textTransform:"uppercase",letterSpacing:".04em"}}>{l}</span><span style={{fontSize:13,fontWeight:600,fontFamily:"var(--m)",color:w?"var(--amb)":"var(--f)"}}>{v}<span style={{fontSize:8,fontWeight:400,color:"var(--f3)"}}>{u}</span></span></div>;return<div style={{display:"flex",gap:18,padding:"7px 12px",background:"var(--b1)",borderRadius:6,border:"1px solid var(--br)"}}><M l="FPS" v={d.fps||0} u="" w={(d.fps||0)<24}/><M l="Bitrate" v={((d.bitrate||0)/1000).toFixed(1)} u="Mb"/><M l="Latency" v={d.latency||0} u="ms" w={(d.latency||0)>25}/><M l="Dropped" v={d.dropped||0} u="" w={(d.dropped||0)>5}/><M l="Battery" v={d.battery??0} u="%" w={(d.battery??0)<25}/></div>};
 
 // Maps a normalized click position on the video element to phone-pixel
 // coordinates. The agent rescales the captured stream's resolution but injects
@@ -449,7 +426,6 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
         <span style={{fontSize:13,fontWeight:600,color:"var(--f)"}}>{device.name}</span>
         {!conn&&<span style={{fontSize:8,padding:"2px 6px",borderRadius:3,background:"var(--blued)",color:"var(--blue)",fontFamily:"var(--m)",fontWeight:600}}>{Math.floor(st/60)}:{(st%60).toString().padStart(2,"0")}</span>}
       </div>
-      <Metrics d={device}/>
     </div>
     <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,minHeight:0}}>
       <div style={{position:"relative",borderRadius:22,border:"3px solid var(--brh)",overflow:"hidden",boxShadow:"0 8px 36px rgba(0,0,0,.4)",height:"min(100%,580px)",aspectRatio:"9/19.5",background:"#000",flexShrink:0}}>
@@ -765,13 +741,6 @@ export default function App(){
           sErr("Your session was ended — device trust revoked.");
           sView("dash");
         }
-      },
-      m=>{
-        if(cancelled)return;
-        // Merge per-device metrics push into the device list so any view that
-        // reads from `devices` (dashboard cards, RemoteView metrics overlay)
-        // refreshes without a separate fetch.
-        sDevices(prev=>prev.map(d=>d.id===m.deviceId?{...d,fps:m.fps,bitrate:m.bitrate,latency:m.latency,dropped:m.dropped}:d));
       },
       (token,device)=>{
         if(cancelled)return;

@@ -21,7 +21,6 @@ public class AgentHub(
     InputRelayService inputRelay,
     SessionService sessions,
     WebRtcSignalingService signaling,
-    ObservabilityService observability,
     TurnService turn,
     IHubContext<ControlHub> controlHub,
     IHubContext<AgentHub> agentHub,
@@ -44,7 +43,6 @@ public class AgentHub(
         var cts = new CancellationTokenSource();
         _connections[deviceId] = new AgentConnection(Context.ConnectionId, cts);
         signaling.BindAgent(deviceId, Context.ConnectionId);
-        observability.RecordReconnect(deviceId);
 
         await devices.MarkOnlineAsync(deviceId);
         await BroadcastDeviceList();
@@ -116,25 +114,6 @@ public class AgentHub(
         devices.UpdateStatus(deviceId, status.Battery, status.Signal, status.Orientation);
         await devices.TouchLastSeenAsync(deviceId);
         await BroadcastDeviceList();
-    }
-
-    public async Task ReportMetrics(AgentMetrics metrics)
-    {
-        var deviceId = GetDeviceIdOrThrow();
-        devices.UpdateMetrics(deviceId, metrics.Fps, metrics.BitrateKbps, metrics.LatencyMs, metrics.DroppedFrames);
-        var snap = observability.Track(deviceId, metrics.Fps, metrics.BitrateKbps, metrics.LatencyMs, metrics.DroppedFrames);
-
-        // Push live numbers to all browser viewers — they decide whether to
-        // care (RemoteView listens, dashboard ignores). Cheaper than a full
-        // device list broadcast on every metrics tick.
-        await controlHub.Clients.All.SendAsync("MetricsUpdated", new
-        {
-            deviceId,
-            fps = snap.Fps,
-            bitrate = snap.BitrateKbps,
-            latency = snap.LatencyMs,
-            dropped = snap.DroppedFrames,
-        });
     }
 
     // ── WebRTC signaling: agent → browser ────────────────────────────────
@@ -211,7 +190,6 @@ public class AgentHub(
 
 public record AgentRegistration(int? Battery, int? Signal, string? Orientation, string? Resolution);
 public record AgentStatus(int? Battery, int? Signal, string? Orientation);
-public record AgentMetrics(int? Fps, int? BitrateKbps, int? LatencyMs, int? DroppedFrames);
 
 // Wire format for an ICE candidate exchanged between agent and browser. Mirrors
 // the fields of RTCIceCandidateInit on the browser side.

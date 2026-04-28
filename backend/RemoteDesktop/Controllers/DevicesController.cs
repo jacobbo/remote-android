@@ -16,13 +16,11 @@ public class DevicesController(
     PairingService pairing,
     DeviceTrustService trust,
     WebRtcSignalingService signaling,
-    ObservabilityService observability,
     IConfiguration config,
     IHubContext<ControlHub> hub,
     IHubContext<AgentHub> agentHub) : ControllerBase
 {
     public record StartPairResponse(string Token, string Uri, long ExpiresAt, int ExpiresInSeconds);
-    public record RotateTrustResponse(string TrustKey);
 
     [HttpGet]
     public async Task<IActionResult> List()
@@ -119,16 +117,6 @@ public class DevicesController(
         return NoContent();
     }
 
-    [HttpPost("{id:guid}/rotate")]
-    [Authorize(Roles = "admin")]
-    public async Task<IActionResult> RotateTrust(Guid id)
-    {
-        var d = await devices.GetAsync(id);
-        if (d is null) return NotFound();
-        var issued = await trust.RotateAsync(id);
-        return Ok(new RotateTrustResponse(issued.Key));
-    }
-
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> Delete(Guid id)
@@ -142,7 +130,6 @@ public class DevicesController(
             await hub.Clients.All.SendAsync("SessionEnded", id, "removed");
         }
         await devices.DeleteAsync(id);
-        observability.Forget(id);
         await BroadcastDeviceList();
         return NoContent();
     }

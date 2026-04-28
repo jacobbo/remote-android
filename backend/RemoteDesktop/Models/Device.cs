@@ -25,10 +25,6 @@ public class DeviceRuntime
     public string Orientation { get; set; } = "portrait";
     public int? Battery { get; set; }
     public int? Signal { get; set; }
-    public int? Fps { get; set; }
-    public int? BitrateKbps { get; set; }
-    public int? LatencyMs { get; set; }
-    public int? DroppedFrames { get; set; }
 }
 
 public record ConnectedUserInfo(Guid Id, string DisplayName, DateTimeOffset Since);
@@ -45,10 +41,6 @@ public record DeviceDto(
     string? Os,
     string? Ip,
     long? LastSeen,
-    int? Fps,
-    int? Bitrate,
-    int? Latency,
-    int? Dropped,
     ConnectedUserDto? ConnectedUser
 );
 

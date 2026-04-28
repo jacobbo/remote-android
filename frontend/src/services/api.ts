@@ -26,10 +26,6 @@ export interface Device {
   os: string | null;
   ip: string | null;
   lastSeen: number | null;
-  fps: number | null;
-  bitrate: number | null;
-  latency: number | null;
-  dropped: number | null;
   connectedUser: ConnectedUser | null;
 }
 
@@ -125,8 +121,6 @@ export const api = {
     request<void>(`/api/devices/pair/${encodeURIComponent(token)}`, { method: "DELETE" }),
   revokeDevice: (id: string) =>
     request<void>(`/api/devices/${id}/revoke`, { method: "POST" }),
-  rotateTrust: (id: string) =>
-    request<{ trustKey: string }>(`/api/devices/${id}/rotate`, { method: "POST" }),
   deleteDevice: (id: string) =>
     request<void>(`/api/devices/${id}`, { method: "DELETE" }),
   listUsers: () => request<AuthUser[]>("/api/users"),

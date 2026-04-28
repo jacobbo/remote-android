@@ -81,16 +81,6 @@ public class DeviceManagerService(IDbContextFactory<AppDbContext> dbf)
         if (!string.IsNullOrWhiteSpace(orientation)) r.Orientation = orientation;
     }
 
-    // Agent media metrics — fps/bitrate/latency/dropped. In-memory only.
-    public void UpdateMetrics(Guid id, int? fps, int? bitrateKbps, int? latencyMs, int? droppedFrames)
-    {
-        var r = _runtime.GetOrAdd(id, _ => new DeviceRuntime());
-        if (fps is not null) r.Fps = fps;
-        if (bitrateKbps is not null) r.BitrateKbps = bitrateKbps;
-        if (latencyMs is not null) r.LatencyMs = latencyMs;
-        if (droppedFrames is not null) r.DroppedFrames = droppedFrames;
-    }
-
     // Persist online/offline transitions and last-seen timestamps.
     public async Task MarkOnlineAsync(Guid id)
     {
@@ -138,10 +128,6 @@ public class DeviceManagerService(IDbContextFactory<AppDbContext> dbf)
             d.OsVersion,
             d.IpAddress,
             d.LastSeenAt?.ToUnixTimeMilliseconds(),
-            r.Fps,
-            r.BitrateKbps,
-            r.LatencyMs,
-            r.DroppedFrames,
             connected is null
                 ? null
                 : new ConnectedUserDto(connected.Id, connected.DisplayName, connected.Since.ToUnixTimeMilliseconds())

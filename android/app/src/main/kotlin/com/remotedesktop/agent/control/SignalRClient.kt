@@ -4,7 +4,6 @@ import android.util.Log
 import com.microsoft.signalr.HubConnection
 import com.microsoft.signalr.HubConnectionBuilder
 import com.microsoft.signalr.HubConnectionState
-import com.remotedesktop.agent.models.AgentMetrics
 import com.remotedesktop.agent.models.AgentRegistration
 import com.remotedesktop.agent.models.AgentStatus
 import com.remotedesktop.agent.models.IceCandidateWire
@@ -69,7 +68,6 @@ class SignalRClient(
 
     suspend fun register(reg: AgentRegistration) = invoke("RegisterDevice", reg)
     suspend fun reportStatus(status: AgentStatus) = invoke("ReportStatus", status)
-    suspend fun reportMetrics(metrics: AgentMetrics) = invoke("ReportMetrics", metrics)
 
     suspend fun sendSdpOffer(sdp: String) = invoke("SendSdpOffer", sdp)
     suspend fun sendIceCandidate(candidate: IceCandidateWire) = invoke("SendIceCandidate", candidate)

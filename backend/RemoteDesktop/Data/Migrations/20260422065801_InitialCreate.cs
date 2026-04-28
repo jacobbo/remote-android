@@ -57,7 +57,6 @@ namespace RemoteDesktop.Data.Migrations
                     DeviceId = table.Column<Guid>(type: "uuid", nullable: false),
                     KeyHash = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     PairedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    LastRotatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     RevokedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>

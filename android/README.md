@@ -1,6 +1,6 @@
 # RemoteDesktop Agent (Android)
 
-Phase 4 deliverable: Android agent that connects to the Pi backend via SignalR, reports device status, dispatches input events from remote viewers via an AccessibilityService, and streams the screen to viewers as an H.264 WebRTC video track.
+Android agent that connects to the backend via SignalR, reports device status, dispatches input events from remote viewers via an AccessibilityService, and streams the screen to viewers as an H.264 WebRTC video track.
 
 When a viewer hits **Connect** in the web UI, the backend pushes `StartCapture` over SignalR. The agent surfaces the system MediaProjection consent dialog, elevates the foreground service to `mediaProjection`, and creates a `PeerConnection` (`stream-webrtc-android`) wired to a `ScreenCapturerAndroid`. SDP offer/answer and ICE candidates flow through the same SignalR hubs (`/hubs/agent` ↔ `/hubs/control`). When the viewer disconnects, the hub pushes `StopCapture` and the session is torn down.
 
@@ -59,20 +59,19 @@ After pairing, the phone reconnects automatically on every boot until you tap **
 | `ScreenUnlockActivity` | `control/ScreenUnlockActivity.kt` | Transparent shim launched on viewer attach: surfaces over the lock screen, wakes the display, and asks the system to dismiss the keyguard (effective only for swipe-to-unlock devices). |
 | `StatusReporter` | `status/StatusReporter.kt` | Battery / wifi-bars / orientation snapshot. |
 
-## Backend hub surface (Phase 3 + Phase 4)
+## Backend hub surface
 
 - `POST /api/agent/pair` — pairing-token-authed (token from the QR); returns `{ deviceId, trustKey, token }`.
 - `POST /api/agent/connect` — trustKey-authed; returns a fresh device JWT (60 min).
 - `/hubs/agent` — device-side SignalR hub (`role=device`).
-  - device → server: `RegisterDevice`, `ReportStatus`, `ReportMetrics`, `SendSdpOffer`, `SendIceCandidate`
+  - device → server: `RegisterDevice`, `ReportStatus`, `SendSdpOffer`, `SendIceCandidate`
   - server → device: `ReceiveInput`, `StartCapture(iceServers)` (carries fresh ephemeral TURN/STUN creds, empty array for LAN-only), `StopCapture`, `ReceiveSdpAnswer`, `ReceiveIceCandidate`, `Revoked`
 
 ## Phase 6 hand-off notes
 
 - **TURN/STUN** — the backend mints fresh ephemeral creds (HMAC-SHA1 over `<expiry>:<subject>`) and ships them as the payload of every `StartCapture` SignalR push. `AgentService.handleStartCapture(servers)` latches them into `iceServers` and passes the list to `WebRtcCaptureSession.attachPeer(...)`. When the backend's `Turn:*` config is unset, the array is empty and the agent uses host candidates only (LAN-only).
-- **Adaptive bitrate** — the WebRTC stack adapts down on congestion automatically and `WebRtcCaptureSession` caps the outbound at 1.5 Mbps via `RtpSender.parameters`. Phase 6 could expose the cap per-device via config and react to `qualityLimitationDurations` in the stats report to step resolution down.
+- **Adaptive bitrate** — the WebRTC stack adapts down on congestion automatically and `WebRtcCaptureSession` caps the outbound at 1.5 Mbps via `RtpSender.parameters`. Phase 6 could expose the cap per-device via config.
 - **Audio** — capture is video-only. To add audio, you'll need `MediaProjection.createAudioRecord` (API 29+) and an `AudioTrack` on the peer connection.
-- **Trust key rotation push** — current rotate flow shows the new key to the admin to manually re-enter on the phone. Phase 6 should push the new key to the still-connected agent so the rotate is seamless.
 
 ## Known limitations
 

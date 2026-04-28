@@ -18,7 +18,6 @@ The key architectural decision is separating **control plane** (SignalR/WebSocke
 │              │                 │  ├─ Device Manager        │                 │              │
 │              │   Signaling     │  ├─ Auth + Trust Service  │   Signaling     │              │
 │              │◄────WSS────────►│  ├─ WebRTC Signaling     │◄────WSS────────►│  <video>     │
-│              │                 │  ├─ Observability Service │                 │  + overlay   │
 │              │                 │  ├─ coturn TURN Relay    │                 │              │
 │              │                 │  └─ Static File Server    │                 │              │
 │              │◄════════ WebRTC media: direct or TURN relay ════════════════►│              │
@@ -87,8 +86,7 @@ remote-desktop/
 │   │   │   ├── UserService.cs
 │   │   │   ├── InputRelayService.cs
 │   │   │   ├── WebRtcSignalingService.cs
-│   │   │   ├── PairingService.cs
-│   │   │   └── ObservabilityService.cs
+│   │   │   └── PairingService.cs
 │   │   ├── Data/
 │   │   │   ├── AppDbContext.cs         # EF Core DbContext (Users, Devices, DeviceTrusts, Sessions)
 │   │   │   └── Migrations/            # EF Core migrations (auto-generated)
@@ -98,8 +96,7 @@ remote-desktop/
 │   │   │   ├── User.cs
 │   │   │   ├── UserRole.cs
 │   │   │   ├── InputEvent.cs
-│   │   │   ├── SessionState.cs
-│   │   │   └── DeviceMetrics.cs
+│   │   │   └── SessionState.cs
 │   │   ├── Middleware/
 │   │   │   ├── DeviceAuthMiddleware.cs
 │   │   │   └── RoleAuthorizationMiddleware.cs
@@ -124,7 +121,6 @@ remote-desktop/
 │   │   ├── components/
 │   │   │   ├── DeviceCard.tsx
 │   │   │   ├── UserMenu.tsx
-│   │   │   ├── MetricsBar.tsx
 │   │   │   ├── PhoneFrame.tsx
 │   │   │   ├── QrCodeDisplay.tsx
 │   │   │   └── ControlPanel.tsx
@@ -329,7 +325,6 @@ device_trusts
 ├── device_id       UUID FK → devices.id UNIQUE
 ├── key_hash        VARCHAR(200) NOT NULL -- hashed trust key
 ├── paired_at       TIMESTAMPTZ NOT NULL
-├── last_rotated_at TIMESTAMPTZ
 └── revoked_at      TIMESTAMPTZ          -- NULL = active, set = revoked
 
 sessions
@@ -346,7 +341,7 @@ sessions
 
 - **EF Core code-first** — models in `Models/` map directly to these tables. `AppDbContext` in `Data/` configures relationships and indexes. Migrations are generated and applied automatically on startup in development, manually in production. Pairing tokens are short-lived (5 minutes) and held in-memory by `PairingService` rather than persisted to the database.
 - **Session history** — the `sessions` table is append-only for audit purposes. Completed sessions are never deleted, allowing usage analytics (who connected to which device, when, for how long).
-- **Device state is hybrid** — persistent fields (name, model, trust key) live in PostgreSQL. Volatile runtime state (battery, signal, FPS, latency, current status) lives in `DeviceManagerService`'s in-memory `ConcurrentDictionary`, updated by the device agent via SignalR. The `status` and `last_seen_at` columns in the `devices` table are synced periodically (every 30s) and on connect/disconnect events, so the dashboard can show last-known state for offline devices.
+- **Device state is hybrid** — persistent fields (name, model, trust key) live in PostgreSQL. Volatile runtime state (battery, signal, orientation, current status) lives in `DeviceManagerService`'s in-memory `ConcurrentDictionary`, updated by the device agent via SignalR. The `status` and `last_seen_at` columns in the `devices` table are synced periodically (every 30s) and on connect/disconnect events, so the dashboard can show last-known state for offline devices.
 - **Connection string** — injected via environment variable in Docker. For local dev, configured in `appsettings.Development.json`.
 - **Database performance** — PostgreSQL Alpine uses ~50–100MB RAM at idle with this workload. Disk usage is negligible for 10 devices and a handful of users.
 
@@ -354,7 +349,7 @@ sessions
 
 | Method | Route | Role | Purpose |
 |--------|-------|------|---------|
-| GET | `/api/devices` | Any | List all devices with status, metrics, and active session info |
+| GET | `/api/devices` | Any | List all devices with status and active session info |
 | GET | `/api/devices/{id}` | Any | Get device detail including current session (if any) |
 | GET | `/api/devices/{id}/sessions` | Any | Get last 10 sessions for this device (user, timing, reason) |
 | POST | `/api/devices/pair/generate` | Admin | Generate a time-limited pairing token and return it (frontend renders as QR code) |
@@ -383,13 +378,11 @@ All hub methods require a valid JWT. Device management operations (pair, revoke,
 - `ForwardIceCandidate(string candidate)` — relays ICE candidates from the browser.
 - `ForwardInput(InputEvent input)` — relays validated input events from the connected user.
 - `DeviceRevoked()` — notifies the device agent that its trust has been revoked or the device has been removed by an admin. The agent must immediately disconnect, delete its stored trust key and server address, and return to the unpaired QR scan screen.
-- `RotateKey(string newKeyHash)` — pushes a rotated trust key to the device over the existing trusted connection.
 
 **Device → Server:**
 
 - `RegisterDevice(DeviceInfo info)` — phone announces itself with long-lived device key
 - `ReportStatus(DeviceStatus status)` — battery, wifi, orientation, temperature
-- `ReportMetrics(DeviceMetrics metrics)` — fps, encode bitrate, dropped frames
 - `SendIceCandidate(string candidate)` — WebRTC ICE candidate from phone
 - `SendSdpOffer(string sdp)` — WebRTC SDP offer from phone
 
@@ -410,7 +403,6 @@ All hub methods require a valid JWT. Device management operations (pair, revoke,
 - `DeviceListUpdated(DeviceInfo[] devices)` — push dashboard updates (includes active session info per device: connected user name, session start time)
 - `ReceiveIceCandidate(string candidate)` — forward ICE candidate
 - `ReceiveSdpOffer(string sdp)` — forward SDP offer
-- `MetricsUpdated(DeviceMetrics metrics)` — push live metrics
 - `SessionEnded(string deviceId, string reason)` — notifies the connected user that their session was ended (by admin force-disconnect, device going offline, or timeout). The browser shows a notification and returns to device detail view.
 - `PairingCompleted(DeviceInfo device)` — notifies the admin's browser that a device has successfully paired via the QR code flow. The pairing page shows a success state and the device appears in the dashboard.
 
@@ -445,7 +437,7 @@ When an admin revokes or removes a device from the web UI:
 1. Connects to the server's `ControlHub` via WebSocket client using the stored server address.
 2. Registers with its long-lived device trust key (obtained during QR pairing).
 3. Receives `InputEvent` messages and injects them via `AccessibilityService` or adb input bridge.
-4. Reports device metadata and metrics periodically.
+4. Reports device metadata (battery, signal, orientation) periodically.
 
 ### Media (via WebRTC)
 
@@ -480,7 +472,7 @@ A single-page app served from `wwwroot/`:
 
 ### Dashboard View
 
-- Grid of up to 10 uniform device cards showing device icon, name, model, status, battery, signal, OS, IP, and latency.
+- Grid of up to 10 uniform device cards showing device icon, name, model, status, battery, signal, OS, and IP.
 - Cards are identical in size and layout regardless of device state.
 - If a user is currently connected to a device, the card shows a **connected indicator** with the connected user's name (e.g. "Jordan Lee connected").
 - "Pair new device" slot visible to admins only. Clicking it generates a pairing token and displays a QR code that the agent app on the phone scans to initiate pairing.
@@ -517,7 +509,6 @@ Entered only via the Connect action on the device detail view. Shows the live ph
 - Transparent `<canvas>` or `<div>` overlay on top of the video for input capture.
 - Control bar: Home, Back, Recents, keyboard toggle, fullscreen, screenshot, rotate, volume, power.
 - Disconnect button — ends the session and returns to device detail view (not dashboard).
-- Live metrics overlay: FPS, latency, bitrate (from `ObservabilityService`).
 - Both admins and users have full interactive control — tap, swipe, key injection, all buttons active.
 
 ### Role-Based UI Summary
@@ -527,7 +518,6 @@ Entered only via the Connect action on the device detail view. Shows the live ph
 | View dashboard | Yes | Yes |
 | View device detail | Yes | Yes |
 | View connection history | Yes | Yes |
-| View metrics | Yes | Yes |
 | Connect to device (if available) | Yes | Yes |
 | Send input (tap, swipe, keys) | Yes | Yes |
 | Navigation buttons (Back, Home, Recents) | Yes | Yes |
@@ -550,21 +540,6 @@ Entered only via the Connect action on the device detail view. Shows the live ph
 - Keyboard → key injection.
 - Coordinate mapping accounts for: phone resolution, current orientation, letterboxing in the video element.
 
-## Observability
-
-Per-device and per-session metrics, pushed to the frontend via the SignalR `MetricsUpdated` event whenever the agent reports new numbers:
-
-| Metric | Source | Purpose |
-|--------|--------|---------|
-| Capture FPS | Device agent | Is the phone keeping up? |
-| Encode bitrate | Device agent | Bandwidth consumption |
-| End-to-end latency | Browser (measured via ping frame) | User experience quality |
-| Dropped frames | server relay + browser | Congestion detection |
-| Reconnect count | ControlHub | Connection stability |
-| Input round-trip latency | Browser → device → screen update | Responsiveness |
-| Active users per device | ControlHub | Load tracking |
-| Server CPU / memory / network | System metrics | Infrastructure health |
-
 ## Device Trust Model
 
 Moving beyond simple pairing codes to a proper trust model:
@@ -572,7 +547,6 @@ Moving beyond simple pairing codes to a proper trust model:
 - **Per-device long-lived key** — generated during initial pairing, stored on both the phone and the server. Used for all subsequent connections without re-pairing.
 - **Initial pairing via QR code** — an admin clicks "Pair new device" in the web UI, which generates a time-limited pairing token and displays it as a QR code. The admin scans this QR code using the agent app on the phone. The QR payload contains the server's address and the one-time pairing token (e.g. `rdpair://<server-host>:<port>/pair?token=<uuid>`). The agent app connects to the server, presents the token, and the server validates it. On success, the server issues a device-specific long-lived trust key to the phone and the device appears in the dashboard. The pairing token expires after 5 minutes and can only be used once.
 - **QR pairing security** — the token is a cryptographically random UUID, single-use, and time-limited. The server rejects expired or already-consumed tokens. The QR code is displayed only to authenticated admins. If the token expires before being scanned, the admin can generate a new one. No sensitive secrets (like the trust key itself) are embedded in the QR code — the key exchange happens over the established WSS connection after the token is validated.
-- **Key rotation** — pairing secrets can be rotated on demand from the web UI without physical access to the phone (the new key is pushed over the existing trusted connection).
 - **Remote revocation** — any device can be revoked from the web UI at any time. Revocation is immediate: the server sends a `DeviceRevoked` message to the agent, closes the device's WebSocket and WebRTC connections, and rejects the device key on future attempts. On receiving the revocation, the agent deletes its stored trust key and server address from Android Keystore and resets to the unpaired state (QR scan screen). The device must be re-paired via a new QR code to reconnect. Device removal (`DELETE /api/devices/{id}`) follows the same agent-side flow — the agent is notified, wiped, and returned to the QR scan screen.
 - **Device inventory** — the web UI shows all trusted devices (connected or not), with last-seen timestamps and the ability to revoke.
 
@@ -786,7 +760,7 @@ End-to-end flow: user opens a device, connects, interacts, and disconnects.
 - Receives the SDP offer, creates an SDP answer, sends it back via `SendSdpAnswer`.
 - WebRTC peer connection is established.
 - H.264 video stream from the phone arrives and plays in the `<video>` element.
-- Session status updates to "connected". Metrics overlay starts showing live FPS, latency, bitrate.
+- Session status updates to "connected".
 
 **Time to first frame:** target < 2 seconds from Connect click to live video.
 
@@ -944,9 +918,9 @@ Build the Android agent app (Kotlin, VS Code + Gradle):
 
 Connect the Android agent and browser with a direct WebRTC peer connection. Implement `WebRtcSignalingService` on the server for ICE/SDP relay only; the backend does not forward media packets. Browser plays the live stream via a `<video>` element. Wire up the full flow: user clicks Connect in device detail → SignalR triggers agent → Android creates a WebRTC offer → browser answers → ICE selects either a direct path or coturn relay → live video appears in the browser → input events flow back over SignalR. Add connection-state handling, bitrate/frame-rate constraints, and TURN fallback diagnostics.
 
-### Phase 5 — Multi-Device + Observability
+### Phase 5 — Multi-Device
 
-Scale to 10 devices. Implement device pairing flow (admin generates QR code in web UI → phone agent scans QR → token validated → trust key issued), device trust key rotation and revocation. Add the full metrics pipeline (`ObservabilityService`) — per-device FPS, bitrate, latency, dropped frames, session counts. Load-test with multiple devices on the server. Tune buffer sizes, frame rate caps, and degradation thresholds based on real measurements.
+Scale to 10 devices. Implement device pairing flow (admin generates QR code in web UI → phone agent scans QR → token validated → trust key issued) and device trust revocation. Load-test with multiple devices on the server.
 
 ### Phase 6 — Remote Access + Hardening
 

@@ -70,20 +70,6 @@ class AgentStatus() {
     }
 }
 
-class AgentMetrics() {
-    var fps: Int? = null
-    var bitrateKbps: Int? = null
-    var latencyMs: Int? = null
-    var droppedFrames: Int? = null
-
-    constructor(fps: Int?, bitrateKbps: Int?, latencyMs: Int?, droppedFrames: Int?) : this() {
-        this.fps = fps
-        this.bitrateKbps = bitrateKbps
-        this.latencyMs = latencyMs
-        this.droppedFrames = droppedFrames
-    }
-}
-
 // Server → device push for TURN/STUN credentials. Arrives as the payload of
 // the SignalR "StartCapture" event so the agent's PeerConnection has fresh
 // ephemeral credentials at the moment it builds its offer. urls + username +

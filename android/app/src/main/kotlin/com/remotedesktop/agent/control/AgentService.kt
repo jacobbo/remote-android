@@ -17,7 +17,6 @@ import com.remotedesktop.agent.MainActivity
 import com.remotedesktop.agent.R
 import com.remotedesktop.agent.input.InputAccessibilityService
 import com.remotedesktop.agent.input.InputDispatcher
-import com.remotedesktop.agent.models.AgentMetrics
 import com.remotedesktop.agent.models.ConnectRequest
 import com.remotedesktop.agent.models.IceCandidateWire
 import com.remotedesktop.agent.models.IceServerWire
@@ -127,10 +126,7 @@ class AgentService : LifecycleService() {
                     client.register(initial.toRegistration())
 
                     backoff = 2_000L
-                    // Concurrently push status (battery / signal) and WebRTC
-                    // metrics (fps / bitrate / etc.) until the hub goes away.
-                    val metricsJob = launch { runMetricsLoop(client) }
-                    try { runStatusLoop(ctx, client) } finally { metricsJob.cancel() }
+                    runStatusLoop(ctx, client)
                 } catch (cancel: kotlinx.coroutines.CancellationException) {
                     throw cancel
                 } catch (t: Throwable) {
@@ -154,27 +150,6 @@ class AgentService : LifecycleService() {
             runCatching { client.reportStatus(snap.toStatus()) }
         }
     }
-
-    private suspend fun runMetricsLoop(client: SignalRClient) {
-        // Polls the active PeerConnection's outbound-rtp / remote-inbound-rtp
-        // stats every METRICS_INTERVAL_MS and forwards to the hub. No-op
-        // gracefully when no peer is attached — getStats returns an empty
-        // snapshot and the hub just sees zeros.
-        while (lifecycleScope.isActive && client.isConnected) {
-            delay(METRICS_INTERVAL_MS)
-            val s = capture
-            if (s == null || !s.isPeerAttached) continue
-            val snap = pullStatsSnapshot(s) ?: continue
-            val payload = AgentMetrics(snap.fps, snap.bitrateKbps, snap.latencyMs, snap.droppedFrames)
-            runCatching { client.reportMetrics(payload) }
-        }
-    }
-
-    private suspend fun pullStatsSnapshot(session: WebRtcCaptureSession): WebRtcCaptureSession.StatsSnapshot? =
-        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-            runCatching { session.requestStats { snap -> if (cont.isActive) cont.resume(snap) {} } }
-                .onFailure { if (cont.isActive) cont.resume(null) {} }
-        }
 
     private fun handleRevoked() {
         Log.w(TAG, "Server-side trust revoked — unpairing and stopping service")
@@ -380,7 +355,6 @@ class AgentService : LifecycleService() {
     companion object {
         private const val TAG = "AgentService"
         private const val STATUS_INTERVAL_MS = 30_000L
-        private const val METRICS_INTERVAL_MS = 5_000L
         // Safety upper bound on the screen wake lock so a misbehaving session
         // can't drain the battery indefinitely. Re-acquired on each viewer.
         private const val MAX_WAKE_LOCK_MS = 4 * 60 * 60 * 1000L

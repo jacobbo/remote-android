@@ -18,14 +18,6 @@ export interface WebRtcHandlers {
   onIceCandidate: (deviceId: string, candidate: IceCandidateWire) => void;
 }
 
-export interface MetricsUpdate {
-  deviceId: string;
-  fps: number | null;
-  bitrate: number | null;
-  latency: number | null;
-  dropped: number | null;
-}
-
 let connection: HubConnection | null = null;
 
 // One swappable handler set for the active RemoteView. The hub-level listener
@@ -40,7 +32,6 @@ export const setWebRtcHandlers = (h: WebRtcHandlers | null) => {
 export const connectHub = async (
   onDevices: (devices: Device[]) => void,
   onSessionEnded: (deviceId: string, reason: string) => void,
-  onMetrics: (m: MetricsUpdate) => void,
   onPairingCompleted: (token: string, device: Device) => void
 ): Promise<HubConnection> => {
   if (connection && connection.state === HubConnectionState.Connected) return connection;
@@ -53,7 +44,6 @@ export const connectHub = async (
 
   connection.on("DeviceListUpdated", onDevices);
   connection.on("SessionEnded", onSessionEnded);
-  connection.on("MetricsUpdated", onMetrics);
   connection.on("PairingCompleted", onPairingCompleted);
   connection.on("ReceiveSdpOffer", (deviceId: string, sdp: string) =>
     webrtcHandlers?.onSdpOffer(deviceId, sdp)

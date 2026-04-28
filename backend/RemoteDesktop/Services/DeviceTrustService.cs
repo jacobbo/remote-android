@@ -32,14 +32,11 @@ public class DeviceTrustService(IDbContextFactory<AppDbContext> dbf)
         else
         {
             existing.KeyHash = hash;
-            existing.LastRotatedAt = DateTimeOffset.UtcNow;
             existing.RevokedAt = null;
         }
         await db.SaveChangesAsync();
         return new TrustIssue(key, DateTimeOffset.UtcNow);
     }
-
-    public async Task<TrustIssue> RotateAsync(Guid deviceId) => await IssueAsync(deviceId);
 
     public async Task<bool> RevokeAsync(Guid deviceId)
     {

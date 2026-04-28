@@ -15,7 +15,6 @@ import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
-import org.webrtc.RTCStatsCollectorCallback
 import org.webrtc.RtpReceiver
 import org.webrtc.RtpSender
 import org.webrtc.RtpTransceiver
@@ -65,13 +64,6 @@ class WebRtcCaptureSession(
         val fps: Int = 30,
     )
 
-    data class StatsSnapshot(
-        val fps: Int? = null,
-        val bitrateKbps: Int? = null,
-        val droppedFrames: Int? = null,
-        val latencyMs: Int? = null,
-    )
-
     private val captureRunning = AtomicBoolean(false)
     private val eglBase: EglBase = EglBase.create()
     private var factory: PeerConnectionFactory? = null
@@ -82,11 +74,6 @@ class WebRtcCaptureSession(
     private var peer: PeerConnection? = null
     private var peerCallbacks: PeerCallbacks? = null
     private var videoSender: RtpSender? = null
-
-    // Tracks the previous bytesSent + timestamp so we can compute bitrate from
-    // the cumulative outbound-rtp counter. Reset whenever the peer is rebuilt.
-    private var lastBytesSent: Long? = null
-    private var lastStatsAtMs: Long? = null
 
     val isCaptureRunning: Boolean get() = captureRunning.get()
     val isPeerAttached: Boolean get() = peer != null
@@ -133,8 +120,9 @@ class WebRtcCaptureSession(
         val track = videoTrack ?: error("video track missing")
 
         // Empty ICE-server list keeps things LAN-only (host candidates only).
-        // The agent fetches TURN credentials via /api/ice-servers per agent
-        // session; coturn validates them against its static-auth-secret.
+        // The agent receives ephemeral TURN credentials as the payload of the
+        // SignalR `StartCapture` push; coturn validates them against its
+        // static-auth-secret.
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
@@ -150,10 +138,6 @@ class WebRtcCaptureSession(
             ?.direction = RtpTransceiver.RtpTransceiverDirection.SEND_ONLY
 
         applyBitrateCap()
-        // Stats counters are per-peer; reset so the first delta after re-attach
-        // doesn't compute against the previous peer's counters.
-        lastBytesSent = null
-        lastStatsAtMs = null
 
         Log.i(TAG, "Peer attached — creating offer")
         createOffer(callbacks)
@@ -170,48 +154,6 @@ class WebRtcCaptureSession(
         params.encodings.clear()
         params.encodings.addAll(updated)
         sender.parameters = params
-    }
-
-    fun requestStats(callback: (StatsSnapshot) -> Unit) {
-        val pc = peer
-        if (pc == null) { callback(StatsSnapshot()); return }
-        pc.getStats(RTCStatsCollectorCallback { report ->
-            var fps: Int? = null
-            var bitrate: Int? = null
-            var dropped: Int? = null
-            var latency: Int? = null
-
-            val outbound = report.statsMap.values.firstOrNull { s ->
-                s.type == "outbound-rtp" && (s.members["kind"] as? String) == "video"
-            }
-            if (outbound != null) {
-                (outbound.members["framesPerSecond"] as? Number)?.let { fps = it.toInt() }
-                (outbound.members["framesDropped"] as? Number)?.let { dropped = it.toInt() }
-
-                val bytesSent = (outbound.members["bytesSent"] as? Number)?.toLong()
-                val nowMs = System.currentTimeMillis()
-                val prevBytes = lastBytesSent
-                val prevAt = lastStatsAtMs
-                if (bytesSent != null && prevBytes != null && prevAt != null && nowMs > prevAt) {
-                    val deltaBits = (bytesSent - prevBytes) * 8.0
-                    val deltaSec = (nowMs - prevAt) / 1000.0
-                    if (deltaSec > 0) bitrate = (deltaBits / deltaSec / 1000.0).toInt()
-                }
-                if (bytesSent != null) {
-                    lastBytesSent = bytesSent
-                    lastStatsAtMs = nowMs
-                }
-            }
-
-            val remote = report.statsMap.values.firstOrNull { s ->
-                s.type == "remote-inbound-rtp" && (s.members["kind"] as? String) == "video"
-            }
-            (remote?.members?.get("roundTripTime") as? Number)?.let {
-                latency = (it.toDouble() * 1000.0).toInt()
-            }
-
-            callback(StatsSnapshot(fps, bitrate, dropped, latency))
-        })
     }
 
     fun detachPeer() {

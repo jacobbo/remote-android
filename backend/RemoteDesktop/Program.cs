@@ -21,7 +21,6 @@ builder.Services.AddSingleton<DeviceTrustService>();
 builder.Services.AddSingleton<PairingService>();
 builder.Services.AddSingleton<InputRelayService>();
 builder.Services.AddSingleton<WebRtcSignalingService>();
-builder.Services.AddSingleton<ObservabilityService>();
 builder.Services.AddSingleton<TurnService>();
 
 // Controllers + SignalR
