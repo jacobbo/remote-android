@@ -65,6 +65,13 @@ class AgentService : LifecycleService() {
     // standard pattern for screen-mirroring apps (deprecated but still works
     // and is the only API that turns the display on from a Service).
     private var screenWakeLock: PowerManager.WakeLock? = null
+    // Held for the foreground service's whole lifetime. Without it, Android's
+    // App Standby + Doze suspend the OkHttp socket within a few minutes of
+    // screen-off — the agent process keeps running but its SignalR WebSocket
+    // gets severed and the dashboard shows the device offline until the user
+    // re-opens the app. PARTIAL_WAKE_LOCK keeps the CPU running just enough
+    // to honour socket pings; the screen + radio still sleep normally.
+    private var serviceWakeLock: PowerManager.WakeLock? = null
     // Set by the most recent StartCapture push. The backend mints fresh creds
     // server-side per session and ships them as the SignalR payload, so the
     // agent never has to round-trip a separate REST call. Reset on detach.
@@ -96,6 +103,7 @@ class AgentService : LifecycleService() {
         }
 
         startForegroundCompat(identity.serverUrl ?: "", capturing = false)
+        acquireServiceWakeLock()
 
         workJob = lifecycleScope.launch {
             // Outer loop keeps the agent reconnected on transient failures.
@@ -272,6 +280,22 @@ class AgentService : LifecycleService() {
         screenWakeLock = null
     }
 
+    private fun acquireServiceWakeLock() {
+        if (serviceWakeLock?.isHeld == true) return
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RemoteDesktop:service")
+        wl.setReferenceCounted(false)
+        runCatching { wl.acquire() }  // no timeout — released on stopSelfSafely / onDestroy
+            .onFailure { t -> Log.w(TAG, "Failed to acquire service wake lock", t) }
+        serviceWakeLock = wl
+    }
+
+    private fun releaseServiceWakeLock() {
+        val wl = serviceWakeLock ?: return
+        if (wl.isHeld) runCatching { wl.release() }
+        serviceWakeLock = null
+    }
+
     private fun handleRemoteIce(wire: IceCandidateWire) {
         val mid = wire.sdpMid ?: return
         val idx = wire.sdpMLineIndex ?: return
@@ -309,6 +333,7 @@ class AgentService : LifecycleService() {
         runCatching { capture?.close() }
         capture = null
         releaseScreenWakeLock()
+        releaseServiceWakeLock()
         captureScope.cancel()
         lifecycleScope.launch { runCatching { signalR?.stop() } }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE)
@@ -319,6 +344,11 @@ class AgentService : LifecycleService() {
     override fun onDestroy() {
         workJob?.cancel()
         workJob = null
+        // Belt-and-braces: stopSelfSafely already releases, but if the service
+        // is destroyed via some other path (LMKD, crash) we still want the
+        // wake lock back so the system isn't holding our CPU forever.
+        releaseServiceWakeLock()
+        releaseScreenWakeLock()
         super.onDestroy()
     }
 

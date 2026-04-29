@@ -2,8 +2,10 @@ package com.remotedesktop.agent
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,13 +67,46 @@ class MainActivity : ComponentActivity() {
         binding.scanButton.isEnabled = !id.isPaired
         binding.pairHint.visibility = if (id.isPaired) android.view.View.GONE else android.view.View.VISIBLE
 
-        if (id.isPaired && !accessibilityOn) {
+        if (!id.isPaired) return
+
+        // Battery optimization is the most common reason the agent gets killed
+        // after a few minutes — surface that prompt first since it's a one-tap
+        // system dialog. The accessibility warning is a noisier 3-screen flow,
+        // shown only once battery is sorted.
+        if (!isBatteryUnrestricted()) {
+            promptBatteryWhitelist()
+        } else if (!accessibilityOn) {
             Snackbar.make(
                 binding.root,
                 getString(R.string.warn_accessibility_off, getString(R.string.action_open_accessibility)),
                 Snackbar.LENGTH_LONG
             ).show()
         }
+    }
+
+    private fun isBatteryUnrestricted(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun promptBatteryWhitelist() {
+        Snackbar.make(
+            binding.root,
+            getString(R.string.warn_battery_optimized),
+            Snackbar.LENGTH_INDEFINITE
+        ).setAction(getString(R.string.action_disable_battery_optimization)) {
+            // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS pops the in-app
+            // confirmation dialog directly. If the OEM doesn't expose it (some
+            // forks have stripped it), fall back to the full battery list so
+            // the user can still find the toggle.
+            val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            runCatching { startActivity(direct) }.onFailure {
+                runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            }
+        }.show()
     }
 
     private fun wireButtons() {

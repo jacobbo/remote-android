@@ -30,5 +30,7 @@
     <string name="notif_capturing_text">Sharing screen via %1$s</string>
 
     <string name="warn_accessibility_off">Input injection is not enabled. Tap %1$s to grant.</string>
+    <string name="warn_battery_optimized">Battery optimization is on — the agent will be killed after a few minutes of screen-off.</string>
+    <string name="action_disable_battery_optimization">Allow</string>
     <string name="error_pair_failed">Pairing failed: %1$s</string>
 </resources>

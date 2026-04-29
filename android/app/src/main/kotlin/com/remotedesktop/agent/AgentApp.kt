@@ -15,11 +15,19 @@ class AgentApp : Application() {
         instance = this
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // IMPORTANCE_DEFAULT keeps the foreground-service notification
+            // visible-but-not-noisy and signals the OS that this service is
+            // user-meaningful — IMPORTANCE_LOW gets the service treated as
+            // disposable, which the App Standby Bucket scheduler punishes
+            // with aggressive throttling after a few minutes of screen-off.
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.notif_channel_agent),
-                NotificationManager.IMPORTANCE_LOW
-            )
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                setSound(null, null)
+                enableVibration(false)
+            }
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
