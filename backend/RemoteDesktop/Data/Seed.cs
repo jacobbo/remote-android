@@ -28,13 +28,13 @@ public static class Seed
             var seeded = new[]
             {
                 Make("OnePlus 12", "OnePlus 12",         DeviceStatus.Online, "Android 14", "192.168.1.43", "1440x3168",
-                    new DeviceRuntime { Battery = 23, Signal = 5, Orientation = "portrait" }),
+                    new DeviceRuntime { Battery = 23, Signal = 5 }),
                 Make("Galaxy A54", "Samsung Galaxy A54", DeviceStatus.Offline,"Android 13", "192.168.1.45", "1080x2340",
-                    new DeviceRuntime { Battery = 12, Signal = 0, Orientation = "portrait" }, lastSeenMinutesAgo: 60),
+                    new DeviceRuntime { Battery = 12, Signal = 0 }, lastSeenMinutesAgo: 60),
                 Make("Xiaomi 14", "Xiaomi 14",           DeviceStatus.Online, "Android 14", "192.168.1.46", "1200x2670",
-                    new DeviceRuntime { Battery = 71, Signal = 3, Orientation = "portrait" }),
+                    new DeviceRuntime { Battery = 71, Signal = 3 }),
                 Make("Nothing Phone 2", "Nothing Phone (2)", DeviceStatus.Online, "Android 14", "192.168.1.47", "1080x2412",
-                    new DeviceRuntime { Battery = 44, Signal = 2, Orientation = "portrait" }),
+                    new DeviceRuntime { Battery = 44, Signal = 2 }),
             };
             db.Devices.AddRange(seeded.Select(s => s.device));
             await db.SaveChangesAsync();
@@ -44,7 +44,7 @@ public static class Seed
         {
             // Server restart: rehydrate runtime cache for existing devices.
             await foreach (var d in db.Devices.AsNoTracking().AsAsyncEnumerable())
-                devices.SeedRuntime(d.Id, new DeviceRuntime { Orientation = "portrait" });
+                devices.SeedRuntime(d.Id, new DeviceRuntime());
         }
 
         if (!await db.Sessions.AnyAsync())

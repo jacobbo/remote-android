@@ -21,6 +21,7 @@ public class DevicesController(
     IHubContext<AgentHub> agentHub) : ControllerBase
 {
     public record StartPairResponse(string Token, string Uri, long ExpiresAt, int ExpiresInSeconds);
+    public record RenameRequest(string Name);
 
     [HttpGet]
     public async Task<IActionResult> List()
@@ -113,6 +114,19 @@ public class DevicesController(
         if (agentConn is not null)
             await agentHub.Clients.Client(agentConn).SendAsync("Revoked");
 
+        await BroadcastDeviceList();
+        return NoContent();
+    }
+
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> Rename(Guid id, [FromBody] RenameRequest req)
+    {
+        try
+        {
+            if (!await devices.RenameAsync(id, req.Name)) return NotFound();
+        }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
         await BroadcastDeviceList();
         return NoContent();
     }

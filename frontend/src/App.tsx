@@ -179,6 +179,21 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
     finally{sAdminBusy(false)}
   };
 
+  // Inline name edit — admins only. The committed value lives on the device
+  // (refreshed via DeviceListUpdated push), so we mirror it locally for the
+  // input and only persist when the user blurs/Enter with a changed value.
+  const[nameDraft,sNameDraft]=useState(device.name);
+  const[nameSaving,sNameSaving]=useState(false);
+  useEffect(()=>{sNameDraft(device.name)},[device.name]);
+  const commitRename=async()=>{
+    const v=nameDraft.trim();
+    if(!v||v===device.name){sNameDraft(device.name);return}
+    sNameSaving(true);
+    try{await api.renameDevice(device.id,v)}
+    catch(e:any){sNameDraft(device.name);alert(e?.message??"Rename failed")}
+    finally{sNameSaving(false)}
+  };
+
   const Info=({label,val})=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid var(--br)"}}><span style={{fontSize:11,color:"var(--f3)"}}>{label}</span><span style={{fontSize:11,color:"var(--f)",fontFamily:"var(--m)"}}>{val}</span></div>;
   const reasonColor=(r:string)=>(({user:"var(--grn)",admin:"var(--amb)",network:"var(--red)",timeout:"var(--f3)",deviceoffline:"var(--red)"} as any)[r]||"var(--f3)");
 
@@ -189,7 +204,6 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
       <span style={{color:"var(--br)"}}>|</span>
       <Dot s={device.status}/>
       <span style={{fontSize:14,fontWeight:700,color:"var(--f)"}}>{device.name}</span>
-      <span style={{fontSize:11,color:"var(--f3)"}}>{device.model}</span>
     </div>
 
     {/* Content */}
@@ -197,10 +211,25 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
       <div style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
         <div style={{background:"var(--b1)",borderRadius:9,border:"1px solid var(--br)",padding:16}}>
           <h3 style={{fontSize:11,fontWeight:600,color:"var(--f3)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Device Info</h3>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid var(--br)",gap:10}}>
+            <span style={{fontSize:11,color:"var(--f3)",flexShrink:0}}>Name</span>
+            {isAdmin?(
+              <input
+                value={nameDraft}
+                disabled={nameSaving}
+                maxLength={100}
+                onChange={e=>sNameDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={e=>{if(e.key==="Enter"){(e.target as HTMLInputElement).blur()}else if(e.key==="Escape"){sNameDraft(device.name);(e.target as HTMLInputElement).blur()}}}
+                style={{all:"unset",fontSize:11,color:"var(--f)",fontFamily:"var(--m)",textAlign:"right",flex:1,minWidth:0,padding:"2px 4px",borderRadius:3,background:nameSaving?"var(--b2)":"transparent",cursor:"text"}}
+              />
+            ):(
+              <span style={{fontSize:11,color:"var(--f)",fontFamily:"var(--m)"}}>{device.name}</span>
+            )}
+          </div>
           <Info label="Model" val={device.model}/>
           <Info label="OS" val={device.os}/>
           <Info label="Resolution" val={device.resolution}/>
-          <Info label="Orientation" val={device.orientation}/>
           <Info label="IP Address" val={device.ip}/>
           <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10}}>
             <div style={{display:"flex",alignItems:"center",gap:4}}><Batt l={device.battery??0}/><span style={{fontSize:10,color:"var(--f3)"}}>{device.battery??0}%</span></div>

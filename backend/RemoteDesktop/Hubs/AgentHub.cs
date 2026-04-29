@@ -103,7 +103,7 @@ public class AgentHub(
     public async Task RegisterDevice(AgentRegistration reg)
     {
         var deviceId = GetDeviceIdOrThrow();
-        devices.UpdateStatus(deviceId, reg.Battery, reg.Signal, reg.Orientation);
+        devices.UpdateStatus(deviceId, reg.Battery, reg.Signal);
         await devices.TouchLastSeenAsync(deviceId);
         await BroadcastDeviceList();
     }
@@ -111,7 +111,7 @@ public class AgentHub(
     public async Task ReportStatus(AgentStatus status)
     {
         var deviceId = GetDeviceIdOrThrow();
-        devices.UpdateStatus(deviceId, status.Battery, status.Signal, status.Orientation);
+        devices.UpdateStatus(deviceId, status.Battery, status.Signal);
         await devices.TouchLastSeenAsync(deviceId);
         await BroadcastDeviceList();
     }
@@ -188,8 +188,8 @@ public class AgentHub(
     private sealed record AgentConnection(string ConnectionId, CancellationTokenSource DrainCts);
 }
 
-public record AgentRegistration(int? Battery, int? Signal, string? Orientation, string? Resolution);
-public record AgentStatus(int? Battery, int? Signal, string? Orientation);
+public record AgentRegistration(int? Battery, int? Signal, string? Resolution);
+public record AgentStatus(int? Battery, int? Signal);
 
 // Wire format for an ICE candidate exchanged between agent and browser. Mirrors
 // the fields of RTCIceCandidateInit on the browser side.

@@ -22,7 +22,6 @@ public class Device
 // (Phase 3+); seeded with sample values in Phase 2.
 public class DeviceRuntime
 {
-    public string Orientation { get; set; } = "portrait";
     public int? Battery { get; set; }
     public int? Signal { get; set; }
 }
@@ -37,7 +36,6 @@ public record DeviceDto(
     int? Battery,
     int? Signal,
     string? Resolution,
-    string? Orientation,
     string? Os,
     string? Ip,
     long? LastSeen,

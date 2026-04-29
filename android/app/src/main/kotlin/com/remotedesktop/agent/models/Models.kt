@@ -47,13 +47,11 @@ data class ApiError(val error: String? = null)
 class AgentRegistration() {
     var battery: Int? = null
     var signal: Int? = null
-    var orientation: String? = null
     var resolution: String? = null
 
-    constructor(battery: Int?, signal: Int?, orientation: String?, resolution: String?) : this() {
+    constructor(battery: Int?, signal: Int?, resolution: String?) : this() {
         this.battery = battery
         this.signal = signal
-        this.orientation = orientation
         this.resolution = resolution
     }
 }
@@ -61,12 +59,10 @@ class AgentRegistration() {
 class AgentStatus() {
     var battery: Int? = null
     var signal: Int? = null
-    var orientation: String? = null
 
-    constructor(battery: Int?, signal: Int?, orientation: String?) : this() {
+    constructor(battery: Int?, signal: Int?) : this() {
         this.battery = battery
         this.signal = signal
-        this.orientation = orientation
     }
 }
 

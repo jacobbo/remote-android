@@ -53,7 +53,7 @@ public class DeviceManagerService(IDbContextFactory<AppDbContext> dbf)
         db.Devices.Add(d);
         await db.SaveChangesAsync();
 
-        _runtime[d.Id] = new DeviceRuntime { Battery = 100, Signal = 4, Orientation = "portrait" };
+        _runtime[d.Id] = new DeviceRuntime { Battery = 100, Signal = 4 };
         return d;
     }
 
@@ -67,18 +67,29 @@ public class DeviceManagerService(IDbContextFactory<AppDbContext> dbf)
         _runtime.TryRemove(id, out _);
     }
 
+    public async Task<bool> RenameAsync(Guid id, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("name is required");
+        await using var db = await dbf.CreateDbContextAsync();
+        var d = await db.Devices.FindAsync(id);
+        if (d is null) return false;
+        d.Name = name.Trim();
+        d.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync();
+        return true;
+    }
+
     public DeviceRuntime Runtime(Guid id) =>
         _runtime.GetOrAdd(id, _ => new DeviceRuntime());
 
     public void SeedRuntime(Guid id, DeviceRuntime r) => _runtime[id] = r;
 
-    // Agent telemetry — battery/signal/orientation. In-memory only.
-    public void UpdateStatus(Guid id, int? battery, int? signal, string? orientation)
+    // Agent telemetry — battery/signal. In-memory only.
+    public void UpdateStatus(Guid id, int? battery, int? signal)
     {
         var r = _runtime.GetOrAdd(id, _ => new DeviceRuntime());
         if (battery is not null) r.Battery = battery;
         if (signal is not null) r.Signal = signal;
-        if (!string.IsNullOrWhiteSpace(orientation)) r.Orientation = orientation;
     }
 
     // Persist online/offline transitions and last-seen timestamps.
@@ -124,7 +135,6 @@ public class DeviceManagerService(IDbContextFactory<AppDbContext> dbf)
             r.Battery,
             r.Signal,
             d.Resolution,
-            r.Orientation,
             d.OsVersion,
             d.IpAddress,
             d.LastSeenAt?.ToUnixTimeMilliseconds(),

@@ -1,7 +1,6 @@
 package com.remotedesktop.agent.status
 
 import android.content.Context
-import android.content.res.Configuration
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import com.remotedesktop.agent.models.AgentRegistration
@@ -13,11 +12,10 @@ import com.remotedesktop.agent.models.AgentStatus
 data class StatusSnapshot(
     val battery: Int?,
     val signalBars: Int?,
-    val orientation: String,
     val resolution: String?,
 ) {
-    fun toRegistration() = AgentRegistration(battery, signalBars, orientation, resolution)
-    fun toStatus() = AgentStatus(battery, signalBars, orientation)
+    fun toRegistration() = AgentRegistration(battery, signalBars, resolution)
+    fun toStatus() = AgentStatus(battery, signalBars)
 }
 
 object StatusReporter {
@@ -25,7 +23,6 @@ object StatusReporter {
     fun snapshot(context: Context): StatusSnapshot = StatusSnapshot(
         battery = batteryPercent(context),
         signalBars = wifiBars(context),
-        orientation = orientation(context),
         resolution = resolution(context),
     )
 
@@ -47,10 +44,6 @@ object StatusReporter {
         if (rssi == -127) return null
         return WifiManager.calculateSignalLevel(rssi, 5).coerceIn(0, 4)
     }
-
-    private fun orientation(context: Context): String =
-        if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
-            "landscape" else "portrait"
 
     private fun resolution(context: Context): String? {
         val dm = context.resources.displayMetrics

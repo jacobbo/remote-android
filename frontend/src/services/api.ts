@@ -22,7 +22,6 @@ export interface Device {
   battery: number | null;
   signal: number | null;
   resolution: string | null;
-  orientation: string | null;
   os: string | null;
   ip: string | null;
   lastSeen: number | null;
@@ -121,6 +120,8 @@ export const api = {
     request<void>(`/api/devices/pair/${encodeURIComponent(token)}`, { method: "DELETE" }),
   revokeDevice: (id: string) =>
     request<void>(`/api/devices/${id}/revoke`, { method: "POST" }),
+  renameDevice: (id: string, name: string) =>
+    request<void>(`/api/devices/${id}`, { method: "PUT", body: JSON.stringify({ name }) }),
   deleteDevice: (id: string) =>
     request<void>(`/api/devices/${id}`, { method: "DELETE" }),
   listUsers: () => request<AuthUser[]>("/api/users"),
