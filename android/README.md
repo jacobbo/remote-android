@@ -37,17 +37,18 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 1. **In the web UI**: log in as admin → click "Pair new device". The page renders a QR code that encodes `rdpair://<host>:<port>/pair?token=<uuid>`. The token expires after 5 minutes.
    - The host/port the QR points at comes from the backend's `Pairing__BaseUrl` env var (e.g. `http://192.168.1.10:5000`). Without it the backend falls back to the request `Host` header, which only works when the admin's browser is on the same LAN segment as the server.
-2. **On the phone:** open the RemoteDesktop Agent app → tap **Scan QR to pair** → grant camera permission → point the camera at the QR. The agent parses the URI, calls `POST /api/agent/pair` with the token plus auto-detected metadata (`Build.MODEL`, OS version), and on success stores the trust key in `EncryptedSharedPreferences` and starts the foreground service.
-3. **Enable input injection:** the app will surface a banner. Tap **Enable input injection** → toggle on the "RemoteDesktop Input Bridge" service in Android Settings → Accessibility.
-4. The web UI's QR card switches to a green "Paired" state and auto-advances to the new device's detail page (driven by the `PairingCompleted` SignalR event broadcast from the agent's pair call).
+2. **On the phone:** open the RemoteDesktop Agent app → tap **Scan QR to pair** → grant camera permission → point the camera at the QR. The agent parses the URI, calls `POST /api/agent/pair` with the token plus auto-detected metadata (`Build.MODEL`, OS version), and on success stores the trust key in `EncryptedSharedPreferences` and starts the foreground service. The device name in the dashboard initially equals `Build.MODEL`; an admin can rename it inline from the device detail view.
+3. **Disable battery optimization:** the app surfaces an indefinite snackbar with an **Allow** action. Tap it → confirm the system dialog. Without this, Android's App Standby + Doze suspend the SignalR socket within ~5 minutes of screen-off and the device flips offline in the dashboard.
+4. **Enable input injection:** once battery is sorted, the next snackbar prompts to enable the accessibility service. Tap **Enable input injection** → toggle on the "RemoteDesktop Input Bridge" service in Android Settings → Accessibility.
+5. The web UI's QR card switches to a green "Paired" state and auto-advances to the new device's detail page (driven by the `PairingCompleted` SignalR event broadcast from the agent's pair call).
 
-After pairing, the phone reconnects automatically on every boot until you tap **Unpair (forget keys)**.
+After pairing, the phone reconnects automatically on every boot until you tap **Unpair (forget keys)** or an admin removes / revokes the device from the web UI.
 
 ## What runs where
 
 | Component | File | Role |
 |-----------|------|------|
-| `AgentService` | `control/AgentService.kt` | Foreground service. Reconnects forever; runs the 30 s status reporter. |
+| `AgentService` | `control/AgentService.kt` | Foreground service. Reconnects forever; runs the 30 s status reporter. Holds a `PARTIAL_WAKE_LOCK` for the service's whole lifetime so Android's App Standby can't suspend the SignalR socket; a separate `SCREEN_BRIGHT_WAKE_LOCK` is grabbed only during viewer sessions to keep the captured display awake. |
 | `SignalRClient` | `control/SignalRClient.kt` | Coroutine wrapper around `com.microsoft.signalr`. |
 | `AgentApi` | `control/AgentApi.kt` | OkHttp + kotlinx.serialization REST client for `/api/agent/pair` and `/api/agent/connect`. |
 | `PairScannerActivity` | `pair/PairScannerActivity.kt` | CameraX preview + ML Kit barcode scanner. Returns `{ baseUrl, token }` to MainActivity via `setResult`. |
@@ -57,7 +58,7 @@ After pairing, the phone reconnects automatically on every boot until you tap **
 | `WebRtcCaptureSession` | `webrtc/WebRtcCaptureSession.kt` | Long-lived `ScreenCapturerAndroid` + `MediaProjection` pipeline. Each viewer attaches/detaches a fresh `PeerConnection` against the live video track — capture stays warm so the consent prompt only appears once per agent process. |
 | `MediaProjectionPermissionActivity` | `webrtc/MediaProjectionPermission.kt` | Transparent shim that pops the system consent dialog and feeds the result back to the service via a CompletableDeferred. |
 | `ScreenUnlockActivity` | `control/ScreenUnlockActivity.kt` | Transparent shim launched on viewer attach: surfaces over the lock screen, wakes the display, and asks the system to dismiss the keyguard (effective only for swipe-to-unlock devices). |
-| `StatusReporter` | `status/StatusReporter.kt` | Battery / wifi-bars / orientation snapshot. |
+| `StatusReporter` | `status/StatusReporter.kt` | Battery + wifi-bars + display-resolution snapshot, pushed via `ReportStatus` every 30 s. |
 
 ## Backend hub surface
 
@@ -76,7 +77,8 @@ After pairing, the phone reconnects automatically on every boot until you tap **
 ## Known limitations
 
 - WiFi RSSI may report `null` on Android 12+ unless the user grants location permission. The backend treats this as "unknown" rather than zero.
-- Key injection beyond the system navigation set (Home/Back/Recents/Power/Volume) requires `INJECT_INPUT_EVENTS`, a system-level permission. Text typing is not implemented in this phase.
+- Key injection beyond the system navigation set (Home/Back/Recents/Power/Volume) requires `INJECT_INPUT_EVENTS`, a system-level permission. Text typing is not implemented.
 - Force-stop of the app cancels the foreground service. Android's auto-restart will re-bring it up only after the user opens the app again.
 - The MediaProjection consent dialog appears once per agent process (on the first viewer connect). The capture pipeline stays warm between viewers, so subsequent connects skip the prompt. The popup will reappear after a device reboot, app force-stop, or if the user revokes via the system "Stop sharing" notification.
 - On viewer connect the agent acquires a screen wake lock (so the captured surface keeps receiving fresh frames) and pops a transparent activity that asks the system to dismiss the keyguard. This only works for swipe-to-unlock devices — secured locks (PIN, pattern, password, biometric) can't be bypassed from a non-system app.
+- Battery optimization MUST be disabled for the agent (the app prompts on first launch). Without it, Android's App Standby suspends the OkHttp socket within ~5 minutes of screen-off and the dashboard flips the device offline. The service-lifetime `PARTIAL_WAKE_LOCK` adds roughly 3–5 % battery per hour while the agent is paired but idle — acceptable for a phone whose primary purpose is being remotely controlled.

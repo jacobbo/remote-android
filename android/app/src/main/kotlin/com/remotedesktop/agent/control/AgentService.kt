@@ -134,7 +134,22 @@ class AgentService : LifecycleService() {
                     client.register(initial.toRegistration())
 
                     backoff = 2_000L
-                    runStatusLoop(ctx, client)
+                    // Status loop runs as a child job; the OUTER loop blocks
+                    // on awaitClosed() so the SDK's onClosed event is the
+                    // single source of truth for "time to reconnect". Without
+                    // this, a stale `isConnected` flag (sometimes the MS
+                    // client doesn't flip it for tens of seconds after a
+                    // socket break) leaves the status loop spinning forever
+                    // and the dashboard stuck on "offline" until the user
+                    // toggles Stop / Start.
+                    val statusJob = launch { runStatusLoop(ctx, client) }
+                    try {
+                        val cause = client.awaitClosed()
+                        if (cause != null) Log.w(TAG, "Hub closed by SDK", cause)
+                        else Log.i(TAG, "Hub closed cleanly — reconnecting")
+                    } finally {
+                        statusJob.cancel()
+                    }
                 } catch (cancel: kotlinx.coroutines.CancellationException) {
                     throw cancel
                 } catch (t: Throwable) {
@@ -155,7 +170,15 @@ class AgentService : LifecycleService() {
         while (lifecycleScope.isActive && client.isConnected) {
             delay(STATUS_INTERVAL_MS)
             val snap = StatusReporter.snapshot(ctx)
-            runCatching { client.reportStatus(snap.toStatus()) }
+            val pushed = runCatching { client.reportStatus(snap.toStatus()) }
+            if (pushed.isFailure) {
+                // Push failed despite isConnected=true → socket is half-dead.
+                // Force a hub stop so onClosed fires and the outer awaitClosed
+                // unblocks instead of waiting for the SDK's keep-alive timeout.
+                Log.w(TAG, "reportStatus failed; tearing down hub", pushed.exceptionOrNull())
+                runCatching { client.stop() }
+                return
+            }
         }
     }
 

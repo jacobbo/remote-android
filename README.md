@@ -13,10 +13,12 @@ See [remote-desktop-plan.md](remote-desktop-plan.md) for the full architecture.
 - WebRTC handshake (phone-initiated offer, browser answer, ICE) flows through `/hubs/agent` ↔ `/hubs/control`
 - Live H.264 video plays in the browser, capped at 1.5 Mbps per stream
 - Mouse drag → swipe, mouse click → tap, navigation buttons → `KEYCODE_*` global actions, all dispatched on the phone via an `AccessibilityService`
-- Admin can revoke a device's trust from the device detail view; revoke pushes a `Revoked` signal to the agent which unpairs and stops itself
+- Admin can pair, **rename** (inline-edit on the device detail view; defaults to `Build.MODEL` from the agent), **revoke trust**, and **remove** a device entirely from the device detail view; revoke pushes a `Revoked` signal to the agent which unpairs and stops itself; remove also wipes the device row + its session history
+- Offline devices stay clickable on the dashboard so an admin can drill in and delete stale entries — Connect is still gated by online status
 - Admin pairs a phone via a QR code rendered in the web UI (`rdpair://host:port/pair?token=<uuid>`); the agent app scans with CameraX + ML Kit, calls `/api/agent/pair`, and the admin's QR card auto-advances on the `PairingCompleted` SignalR event
 - TURN ephemeral credentials minted server-side (HMAC-SHA1 over coturn's static-auth-secret) and shipped over the SignalR control plane: the browser receives them inside the `WatchDevice` response, the agent receives them as the `StartCapture` payload — both feed straight into their `RTCPeerConnection`/`PeerConnection` config
 - Frontend nginx auto-switches to TLS termination on port 443 when a Cloudflare Origin Certificate is dropped into [certs/](certs/) — `origin.pem` + `origin-key.pem`. With no certs the container stays on plain HTTP/80 (dev mode). Behind Cloudflare's Full (Strict) mode, the edge speaks HTTPS to this origin.
+- Agent holds a `PARTIAL_WAKE_LOCK` for the foreground service's whole lifetime (not just during viewer sessions) so Android's App Standby + Doze can't suspend the SignalR socket. First launch after pairing prompts the user to whitelist the app from battery optimization — without that, Pixel/Samsung devices kill the network within ~5 minutes of screen-off.
 
 ## Layout
 
@@ -163,7 +165,7 @@ curl -k https://remote.example.com/healthz       # → {"status":"ok"}
 
 ### 7. Sign in and rotate the demo password
 
-The seed creates `admin / admin` on first boot. Sign in to `https://remote.example.com` and immediately change the admin password via the user menu → Change Password. Delete the `user1` / `user2` demo accounts (User Management → Delete) unless you actually want them.
+The seed creates `admin / admin` on first boot (plus two demo `user1` / `user2` accounts) and **no devices** — the dashboard starts empty. Sign in to `https://remote.example.com` and immediately change the admin password via the user menu → Change Password. Delete the `user1` / `user2` accounts (User Management → Delete) unless you actually want them.
 
 ### 8. Pair phones
 
@@ -211,4 +213,4 @@ Android agent — see [android/README.md](android/README.md) for SDK setup and p
 | user1    | user1    | user  |
 | user2    | user2    | user  |
 
-Admins can pair devices and force-disconnect viewers; regular users can connect to any device and end their own session.
+Admins can pair, rename, revoke, force-disconnect viewers, and remove devices entirely; regular users can connect to any device and end their own session. The seed inserts only these three accounts — no demo devices, the dashboard starts empty.

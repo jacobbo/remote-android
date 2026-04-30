@@ -23,59 +23,11 @@ public static class Seed
             await db.SaveChangesAsync();
         }
 
-        if (!await db.Devices.AnyAsync())
-        {
-            var seeded = new[]
-            {
-                Make("OnePlus 12", "OnePlus 12",         DeviceStatus.Online, "Android 14", "192.168.1.43", "1440x3168",
-                    new DeviceRuntime { Battery = 23, Signal = 5 }),
-                Make("Galaxy A54", "Samsung Galaxy A54", DeviceStatus.Offline,"Android 13", "192.168.1.45", "1080x2340",
-                    new DeviceRuntime { Battery = 12, Signal = 0 }, lastSeenMinutesAgo: 60),
-                Make("Xiaomi 14", "Xiaomi 14",           DeviceStatus.Online, "Android 14", "192.168.1.46", "1200x2670",
-                    new DeviceRuntime { Battery = 71, Signal = 3 }),
-                Make("Nothing Phone 2", "Nothing Phone (2)", DeviceStatus.Online, "Android 14", "192.168.1.47", "1080x2412",
-                    new DeviceRuntime { Battery = 44, Signal = 2 }),
-            };
-            db.Devices.AddRange(seeded.Select(s => s.device));
-            await db.SaveChangesAsync();
-            foreach (var (device, runtime) in seeded) devices.SeedRuntime(device.Id, runtime);
-        }
-        else
-        {
-            // Server restart: rehydrate runtime cache for existing devices.
-            await foreach (var d in db.Devices.AsNoTracking().AsAsyncEnumerable())
-                devices.SeedRuntime(d.Id, new DeviceRuntime());
-        }
-
-        if (!await db.Sessions.AnyAsync())
-        {
-            var users = await db.Users.ToListAsync();
-            var devs = await db.Devices.ToListAsync();
-            if (users.Count > 0 && devs.Count > 0)
-            {
-                var rng = new Random(42);
-                var reasons = new[] { DisconnectReason.User, DisconnectReason.User, DisconnectReason.User, DisconnectReason.Network, DisconnectReason.Admin, DisconnectReason.Timeout, DisconnectReason.DeviceOffline };
-                for (var i = 0; i < 20; i++)
-                {
-                    var u = users[rng.Next(users.Count)];
-                    var d = devs[rng.Next(devs.Count)];
-                    var started = DateTimeOffset.UtcNow.AddDays(-rng.Next(0, 5)).AddHours(-rng.Next(0, 24)).AddMinutes(-rng.Next(0, 60));
-                    var dur = TimeSpan.FromSeconds(rng.Next(30, 1500));
-                    db.Sessions.Add(new Session
-                    {
-                        Id = Guid.NewGuid(),
-                        UserId = u.Id,
-                        DeviceId = d.Id,
-                        Status = SessionStatus.Disconnected,
-                        StartedAt = started,
-                        EndedAt = started + dur,
-                        Reason = reasons[rng.Next(reasons.Length)],
-                        UserDisplayName = u.DisplayName,
-                    });
-                }
-                await db.SaveChangesAsync();
-            }
-        }
+        // Server restart: rehydrate runtime cache for any persisted devices so
+        // their dashboard rows have a non-null DeviceRuntime to read from
+        // before the agent's first ReportStatus push lands.
+        await foreach (var d in db.Devices.AsNoTracking().AsAsyncEnumerable())
+            devices.SeedRuntime(d.Id, new DeviceRuntime());
     }
 
     private static User MakeUser(string username, string password, string displayName, string email, UserRole role) =>
@@ -88,24 +40,4 @@ public static class Seed
             Role = role,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
         };
-
-    private static (Device device, DeviceRuntime runtime) Make(
-        string name, string model, DeviceStatus status, string os, string ip, string resolution,
-        DeviceRuntime runtime, int? lastSeenMinutesAgo = null)
-    {
-        var d = new Device
-        {
-            Id = Guid.NewGuid(),
-            Name = name,
-            Model = model,
-            OsVersion = os,
-            IpAddress = ip,
-            Resolution = resolution,
-            Status = status,
-            LastSeenAt = lastSeenMinutesAgo is null
-                ? DateTimeOffset.UtcNow
-                : DateTimeOffset.UtcNow.AddMinutes(-lastSeenMinutesAgo.Value),
-        };
-        return (d, runtime);
-    }
 }

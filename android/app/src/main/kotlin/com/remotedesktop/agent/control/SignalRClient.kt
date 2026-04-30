@@ -10,6 +10,7 @@ import com.remotedesktop.agent.models.IceCandidateWire
 import com.remotedesktop.agent.models.IceServerWire
 import com.remotedesktop.agent.models.WireInputEvent
 import io.reactivex.rxjava3.core.Single
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -43,6 +44,12 @@ class SignalRClient(
 ) {
 
     private var hub: HubConnection? = null
+    // Completed when the underlying hub fires `onClosed` (server-side
+    // disconnect, network drop, keep-alive timeout) or when `stop()` is
+    // called locally. Lets AgentService block on `awaitClosed()` instead of
+    // polling `isConnected`, so a single source of truth — the SDK's own
+    // close event — drives reconnection.
+    private val closed = CompletableDeferred<Throwable?>()
 
     val isConnected: Boolean
         get() = hub?.connectionState == HubConnectionState.CONNECTED
@@ -59,12 +66,20 @@ class SignalRClient(
         h.on("ReceiveSdpAnswer", { sdp -> onSdpAnswer(sdp) }, String::class.java)
         h.on("ReceiveIceCandidate", { c -> onIceCandidate(c) }, IceCandidateWire::class.java)
         h.on("Revoked", { onRevoked() })
-        h.onClosed { ex -> onClosed(ex) }
+        h.onClosed { ex ->
+            onClosed(ex)
+            closed.complete(ex)
+        }
 
         hub = h
         h.start().awaitCompletable()
         Log.i(TAG, "SignalR connected to $url")
     }
+
+    // Suspends until the hub closes for any reason (remote drop, keep-alive
+    // timeout, local stop). Returns the cause if any. Safe to call multiple
+    // times; subsequent calls just see the already-completed deferred.
+    suspend fun awaitClosed(): Throwable? = closed.await()
 
     suspend fun register(reg: AgentRegistration) = invoke("RegisterDevice", reg)
     suspend fun reportStatus(status: AgentStatus) = invoke("ReportStatus", status)
@@ -75,6 +90,9 @@ class SignalRClient(
     suspend fun stop() = withContext(Dispatchers.IO) {
         runCatching { hub?.stop()?.awaitCompletable() }
         hub = null
+        // Idempotent — completing an already-completed deferred is a no-op
+        // and never throws. Belt-and-braces in case onClosed never fires.
+        closed.complete(null)
     }
 
     private suspend fun invoke(method: String, arg: Any) = withContext(Dispatchers.IO) {

@@ -129,7 +129,7 @@ const DeviceCard=({d,onClick}:{d:Device;onClick:(d:Device)=>void})=>{
   const on=d.status==="online",off=d.status==="offline";
   const sc=on?"var(--grn)":d.status==="idle"?"var(--amb)":"var(--f3)";
   const cu=d.connectedUser;
-  return<button onClick={()=>onClick(d)} style={{all:"unset",cursor:off?"default":"pointer",display:"flex",flexDirection:"column",height:cu?184:164,width:"100%",background:"var(--b1)",border:`1px solid ${cu?"rgba(76,141,245,.2)":"var(--br)"}`,borderRadius:9,overflow:"hidden",transition:"all .2s",boxShadow:cu?"0 0 0 1px rgba(76,141,245,.1),0 2px 12px rgba(0,0,0,.2)":"0 2px 8px rgba(0,0,0,.12)",opacity:off?.38:1}} onMouseEnter={e=>{if(!off)(e.currentTarget as HTMLElement).style.borderColor=cu?"rgba(76,141,245,.35)":"var(--f3)"}} onMouseLeave={e=>(e.currentTarget as HTMLElement).style.borderColor=cu?"rgba(76,141,245,.2)":"var(--br)"}>
+  return<button onClick={()=>onClick(d)} style={{all:"unset",cursor:"pointer",display:"flex",flexDirection:"column",height:cu?184:164,width:"100%",background:"var(--b1)",border:`1px solid ${cu?"rgba(76,141,245,.2)":"var(--br)"}`,borderRadius:9,overflow:"hidden",transition:"all .2s",boxShadow:cu?"0 0 0 1px rgba(76,141,245,.1),0 2px 12px rgba(0,0,0,.2)":"0 2px 8px rgba(0,0,0,.12)",opacity:off?.55:1}} onMouseEnter={e=>(e.currentTarget as HTMLElement).style.borderColor=cu?"rgba(76,141,245,.35)":"var(--f3)"} onMouseLeave={e=>(e.currentTarget as HTMLElement).style.borderColor=cu?"rgba(76,141,245,.2)":"var(--br)"}>
     <div style={{padding:"14px 12px 10px",display:"flex",alignItems:"center",gap:9,borderBottom:"1px solid var(--br)"}}>
       <div style={{width:30,height:30,borderRadius:6,flexShrink:0,background:`${sc}12`,display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={sc} strokeWidth="1.8"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
       <div style={{minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:"var(--f)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</div><div style={{fontSize:9,color:"var(--f3)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.model}</div></div>
@@ -172,11 +172,17 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
 
   const[adminBusy,sAdminBusy]=useState(false);
   const[confirmRevoke,sConfirmRevoke]=useState(false);
+  const[confirmRemove,sConfirmRemove]=useState(false);
   const handleRevoke=async()=>{
     sAdminBusy(true);
     try{await api.revokeDevice(device.id);sConfirmRevoke(false)}
     catch(e:any){alert(e?.message??"Revoke failed")}
     finally{sAdminBusy(false)}
+  };
+  const handleRemove=async()=>{
+    sAdminBusy(true);
+    try{await api.deleteDevice(device.id);sConfirmRemove(false);onBack()}
+    catch(e:any){alert(e?.message??"Remove failed");sAdminBusy(false)}
   };
 
   // Inline name edit — admins only. The committed value lives on the device
@@ -263,8 +269,9 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
 
         {isAdmin&&<div style={{background:"var(--b1)",borderRadius:9,border:"1px solid var(--br)",padding:16,display:"flex",flexDirection:"column",gap:8}}>
           <h3 style={{fontSize:11,fontWeight:600,color:"var(--f3)",textTransform:"uppercase",letterSpacing:".06em"}}>Admin</h3>
-          <div style={{fontSize:10,color:"var(--f3)",lineHeight:1.5}}>Revoke the device (ends any active session, marks trust as revoked, and forces re-pairing via QR).</div>
-          <Btn variant="danger" onClick={()=>sConfirmRevoke(true)} disabled={adminBusy} full>Revoke device</Btn>
+          <div style={{fontSize:10,color:"var(--f3)",lineHeight:1.5}}>Revoke trust (forces re-pairing via QR but keeps connection history) or remove the device entirely (wipes the record and its history).</div>
+          <Btn variant="ghost" onClick={()=>sConfirmRevoke(true)} disabled={adminBusy} full>Revoke trust</Btn>
+          <Btn variant="danger" onClick={()=>sConfirmRemove(true)} disabled={adminBusy} full>Remove device</Btn>
         </div>}
       </div>
 
@@ -294,6 +301,13 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
       confirmLabel="Revoke"
       onCancel={()=>sConfirmRevoke(false)}
       onConfirm={handleRevoke}
+      busy={adminBusy}/>}
+    {confirmRemove&&<ConfirmModal
+      title="Remove device"
+      body={<>This permanently removes <span style={{color:"var(--f)",fontWeight:600}}>{device.name}</span> from the dashboard, deletes its trust key, ends any active session, and wipes its connection history. The phone agent will be told to unpair on next contact.</>}
+      confirmLabel="Remove"
+      onCancel={()=>sConfirmRemove(false)}
+      onConfirm={handleRemove}
       busy={adminBusy}/>}
   </div>
 };
@@ -794,7 +808,7 @@ export default function App(){
     return()=>clearTimeout(t);
   },[view,pairedDevice]);
 
-  const openDetail=(d:Device)=>{if(d.status==="offline")return;setSelId(d.id);sView("detail")};
+  const openDetail=(d:Device)=>{setSelId(d.id);sView("detail")};
   const connect=async(d:Device)=>{
     try{
       const res=await watchDevice(d.id);
