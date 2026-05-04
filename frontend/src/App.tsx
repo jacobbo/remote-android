@@ -42,6 +42,22 @@ const CSS = `
 @keyframes sp{to{transform:rotate(360deg)}}
 @keyframes gl{0%,100%{opacity:.25}50%{opacity:.55}}
 @keyframes pr{0%{box-shadow:0 0 0 0 rgba(76,141,245,.35)}70%{box-shadow:0 0 0 7px rgba(76,141,245,0)}100%{box-shadow:0 0 0 0 rgba(76,141,245,0)}}
+
+/* Responsive overrides — desktop layout uses inline styles (320px sidebars,
+   180px control rails, fixed paddings); these media queries collapse to a
+   single column on narrow viewports. !important is required because inline
+   styles have higher specificity than ordinary class rules. */
+@media(max-width:768px){
+  .rd-pad{padding:14px !important}
+  .rd-pad-h{padding:10px 14px !important}
+  .rd-stack{flex-direction:column !important;align-items:stretch !important}
+  .rd-sidebar{width:100% !important;flex:none !important}
+  .rd-rv-controls{width:100% !important;max-height:none !important}
+  .rd-rv-frame{height:auto !important;max-height:55vh !important;width:auto !important;max-width:100% !important}
+  .rd-hide-narrow{display:none !important}
+  .rd-grid-fill{grid-template-columns:repeat(auto-fill,minmax(160px,1fr)) !important}
+  .rd-wrap{flex-wrap:wrap !important;row-gap:6px !important}
+}
 `;
 
 // ─────────────────────────────────────────────────────
@@ -205,7 +221,7 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%",background:"var(--b0)",animation:"fu .25s"}}>
     {/* Header */}
-    <div style={{padding:"12px 20px",borderBottom:"1px solid var(--br)",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+    <div className="rd-pad-h" style={{padding:"12px 20px",borderBottom:"1px solid var(--br)",display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
       <button onClick={onBack} style={{all:"unset",cursor:"pointer",display:"flex",alignItems:"center",gap:5,color:"var(--f2)",fontSize:11,fontWeight:500}} onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color="var(--f)"} onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color="var(--f2)"}><Ico d="M19 12H5M12 19l-7-7 7-7"/>Dashboard</button>
       <span style={{color:"var(--br)"}}>|</span>
       <Dot s={device.status}/>
@@ -213,8 +229,8 @@ const DeviceDetail=({device,user,onBack,onConnect}:{device:Device;user:AuthUser;
     </div>
 
     {/* Content */}
-    <div style={{flex:1,overflow:"auto",padding:24,display:"flex",gap:20}}>
-      <div style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
+    <div className="rd-pad rd-stack" style={{flex:1,overflow:"auto",padding:24,display:"flex",gap:20}}>
+      <div className="rd-sidebar" style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",gap:16}}>
         <div style={{background:"var(--b1)",borderRadius:9,border:"1px solid var(--br)",padding:16}}>
           <h3 style={{fontSize:11,fontWeight:600,color:"var(--f3)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Device Info</h3>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid var(--br)",gap:10}}>
@@ -462,7 +478,7 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
   const PS=({title,children}:any)=><div style={{display:"flex",flexDirection:"column",gap:2}}><span style={{fontSize:8,color:"var(--f3)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:3,fontWeight:600}}>{title}</span>{children}</div>;
 
   return<div style={{display:"flex",flexDirection:"column",height:"100%",background:"var(--b0)",animation:"fi .2s"}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderBottom:"1px solid var(--br)",flexShrink:0}}>
+    <div className="rd-pad-h" style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px",borderBottom:"1px solid var(--br)",flexShrink:0}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <button onClick={handleDisconnect} style={{all:"unset",cursor:"pointer",display:"flex",alignItems:"center",gap:4,color:"var(--f2)",fontSize:11,fontWeight:500}} onMouseEnter={e=>(e.currentTarget as HTMLElement).style.color="var(--f)"} onMouseLeave={e=>(e.currentTarget as HTMLElement).style.color="var(--f2)"}><S d="M19 12H5M12 19l-7-7 7-7"/>Back</button>
         <span style={{color:"var(--br)"}}>|</span><Dot s={device.status}/>
@@ -470,15 +486,15 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
         {!conn&&<span style={{fontSize:8,padding:"2px 6px",borderRadius:3,background:"var(--blued)",color:"var(--blue)",fontFamily:"var(--m)",fontWeight:600}}>{Math.floor(st/60)}:{(st%60).toString().padStart(2,"0")}</span>}
       </div>
     </div>
-    <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,minHeight:0}}>
-      <div style={{position:"relative",borderRadius:22,border:"3px solid var(--brh)",overflow:"hidden",boxShadow:"0 8px 36px rgba(0,0,0,.4)",height:"min(100%,580px)",aspectRatio:"9/19.5",background:"#000",flexShrink:0}}>
+    <div className="rd-stack" style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,minHeight:0}}>
+      <div className="rd-rv-frame" style={{position:"relative",borderRadius:22,border:"3px solid var(--brh)",overflow:"hidden",boxShadow:"0 8px 36px rgba(0,0,0,.4)",height:"min(100%,580px)",aspectRatio:"9/19.5",background:"#000",flexShrink:0}}>
         <div style={{width:"100%",height:"100%",position:"relative"}}>
           <video ref={videoRef} autoPlay playsInline muted style={{width:"100%",height:"100%",objectFit:"contain",background:"#000",display:"block"}}/>
           <div ref={overlayRef} onMouseDown={onMouseDown} onMouseUp={onMouseUp} onWheel={onScroll} style={{position:"absolute",inset:0,cursor:conn?"wait":"crosshair",zIndex:10}}/>
           {conn&&<div style={{position:"absolute",inset:0,background:"rgba(7,8,10,.85)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,zIndex:20}}><div style={{width:32,height:32,border:"3px solid var(--br)",borderTopColor:"var(--blue)",borderRadius:"50%",animation:"sp .7s linear infinite"}}/><div style={{fontSize:12,fontWeight:600,color:"var(--f)"}}>Connecting...</div><div style={{fontSize:10,color:"var(--f3)"}}>Establishing WebRTC session</div></div>}
         </div>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:12,width:180,flexShrink:0}}>
+      <div className="rd-rv-controls" style={{display:"flex",flexDirection:"column",gap:12,width:180,flexShrink:0}}>
         <PS title="Navigation"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4}}><Ctrl label="Back" onClick={()=>sendKey("KEYCODE_BACK","BACK")}><S d="M19 12H5M12 19l-7-7 7-7"/></Ctrl><Ctrl label="Home" onClick={()=>sendKey("KEYCODE_HOME","HOME")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/></svg></Ctrl><Ctrl label="Recents" onClick={()=>sendKey("KEYCODE_APP_SWITCH","RECENTS")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></Ctrl></div></PS>
         <PS title="System"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4}}><Ctrl label="Vol−" onClick={()=>sendKey("KEYCODE_VOLUME_DOWN","V-")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg></Ctrl><Ctrl label="Vol+" onClick={()=>sendKey("KEYCODE_VOLUME_UP","V+")}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg></Ctrl><Ctrl label="Lock" onClick={()=>sendKey("KEYCODE_POWER","LOCK")} danger><S d="M5 11a2 2 0 012-2h10a2 2 0 012 2v9a2 2 0 01-2 2H7a2 2 0 01-2-2v-9zM8 11V7a4 4 0 118 0v4"/></Ctrl></div></PS>
         <Ctrl label="Disconnect" onClick={handleDisconnect} danger><S d="M18.36 6.64A9 9 0 0120.77 15M2 12C2 6.48 6.48 2 12 2M15 2a10 10 0 014.65 3.5M1 1l22 22"/></Ctrl>
@@ -833,12 +849,12 @@ export default function App(){
     {err&&<div style={{position:"fixed",top:12,right:12,zIndex:200,background:"rgba(232,69,69,.12)",border:"1px solid rgba(232,69,69,.3)",color:"var(--red)",padding:"8px 14px",borderRadius:6,fontSize:12,animation:"fu .2s"}} onClick={()=>sErr("")}>{err} <span style={{opacity:.5,marginLeft:8,cursor:"pointer"}}>×</span></div>}
     {!user?<Login onLogin={(u,t)=>{setToken(t);sUser(u)}}/>:view==="dash"?(
       <div style={{display:"flex",flexDirection:"column",height:"100%",animation:"fu .3s"}}>
-        <div style={{padding:"12px 22px",borderBottom:"1px solid var(--br)",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+        <div className="rd-pad-h rd-wrap" style={{padding:"12px 22px",borderBottom:"1px solid var(--br)",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0,gap:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:28,height:28,borderRadius:6,background:"var(--blued)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div><div><h1 style={{fontSize:14,fontWeight:700,color:"var(--f)",lineHeight:1.2}}>Remote Desktop</h1><span style={{fontSize:9,color:"var(--f3)"}}>{devices.length} devices</span></div></div>
-          <div style={{display:"flex",gap:16,alignItems:"center"}}><div style={{display:"flex",gap:12,fontSize:10}}><span style={{color:"var(--grn)"}}>{onC} online</span><span style={{color:"var(--amb)"}}>{idC} idle</span><span style={{color:"var(--f3)"}}>{devices.length-onC-idC} offline</span></div>{isAdmin&&<Btn variant="ghost" onClick={()=>sView("pair")}>+ Pair Device</Btn>}<UserMenu user={user} onLogout={logout} onOpenUsers={()=>sView("users")}/></div>
+          <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}><div className="rd-hide-narrow" style={{display:"flex",gap:12,fontSize:10}}><span style={{color:"var(--grn)"}}>{onC} online</span><span style={{color:"var(--amb)"}}>{idC} idle</span><span style={{color:"var(--f3)"}}>{devices.length-onC-idC} offline</span></div>{isAdmin&&<Btn variant="ghost" onClick={()=>sView("pair")}>+ Pair Device</Btn>}<UserMenu user={user} onLogout={logout} onOpenUsers={()=>sView("users")}/></div>
         </div>
-        <div style={{flex:1,overflow:"auto",padding:22}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(205px,245px))",gap:11,maxWidth:1400}}>
+        <div className="rd-pad" style={{flex:1,overflow:"auto",padding:22}}>
+          <div className="rd-grid-fill" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(205px,245px))",gap:11,maxWidth:1400}}>
             {devices.map((d,i)=><div key={d.id} style={{animation:`fu .3s ease ${i*.04}s both`}}><DeviceCard d={d} onClick={openDetail}/></div>)}
             {isAdmin&&devices.length<10&&<button onClick={()=>sView("pair")} style={{all:"unset",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",border:"2px dashed var(--br)",borderRadius:9,height:164,color:"var(--f3)",fontSize:10,gap:6,transition:"all .2s"}} onMouseEnter={e=>{(e.currentTarget as HTMLElement).style.borderColor="var(--blue)";(e.currentTarget as HTMLElement).style.color="var(--blue)"}} onMouseLeave={e=>{(e.currentTarget as HTMLElement).style.borderColor="var(--br)";(e.currentTarget as HTMLElement).style.color="var(--f3)"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 5v14M5 12h14"/></svg>Pair new device</button>}
           </div>
