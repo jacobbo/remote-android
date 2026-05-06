@@ -1,7 +1,7 @@
 import type React from "react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { api, ApiError, setToken, type AuthUser, type Device, type PairingToken, type Role, type SessionRow } from "./services/api";
+import { api, ApiError, getToken, setToken, type AuthUser, type Device, type PairingToken, type Role, type SessionRow } from "./services/api";
 import {
   connectHub,
   disconnectHub,
@@ -771,6 +771,10 @@ type View = "dash" | "detail" | "remote" | "users" | "pair";
 
 export default function App(){
   const[user,sUser]=useState<AuthUser|null>(null);
+  // Restoring a session from a localStorage token: while api.me() is in
+  // flight we don't yet know whether to render Login or Dashboard. Skip the
+  // brief Login flash if we have a token to validate.
+  const[booting,sBooting]=useState<boolean>(()=>!!getToken());
   const[view,sView]=useState<View>("dash");
   const[selId,setSelId]=useState<string|null>(null);
   const[devices,sDevices]=useState<Device[]>([]);
@@ -780,6 +784,20 @@ export default function App(){
   // ICE servers come back from WatchDevice (SignalR) and are handed to the
   // RTCPeerConnection inside RemoteView. Empty list when LAN-only.
   const[iceServers,sIceServers]=useState<RTCIceServer[]>([]);
+
+  // On boot: if a JWT was persisted from a prior session, ask the backend
+  // who the bearer is. 200 → seed `user` and skip login. Anything else
+  // (expired token, server reset its JWT secret, deleted account) → wipe
+  // the token and fall through to the login screen.
+  useEffect(()=>{
+    if(!booting)return;
+    let cancelled=false;
+    api.me()
+      .then(u=>{if(!cancelled)sUser(u)})
+      .catch(()=>{if(!cancelled)setToken(null)})
+      .finally(()=>{if(!cancelled)sBooting(false)});
+    return()=>{cancelled=true};
+  },[booting]);
 
   const sel=selId?devices.find(d=>d.id===selId)??null:null;
 
@@ -847,7 +865,7 @@ export default function App(){
   return<div style={{width:"100%",height:"100vh",background:"var(--b0)",color:"var(--f)",fontFamily:"var(--s)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <style>{CSS}</style>
     {err&&<div style={{position:"fixed",top:12,right:12,zIndex:200,background:"rgba(232,69,69,.12)",border:"1px solid rgba(232,69,69,.3)",color:"var(--red)",padding:"8px 14px",borderRadius:6,fontSize:12,animation:"fu .2s"}} onClick={()=>sErr("")}>{err} <span style={{opacity:.5,marginLeft:8,cursor:"pointer"}}>×</span></div>}
-    {!user?<Login onLogin={(u,t)=>{setToken(t);sUser(u)}}/>:view==="dash"?(
+    {booting?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:28,height:28,border:"3px solid var(--br)",borderTopColor:"var(--blue)",borderRadius:"50%",animation:"sp .7s linear infinite"}}/></div>:!user?<Login onLogin={(u,t)=>{setToken(t);sUser(u)}}/>:view==="dash"?(
       <div style={{display:"flex",flexDirection:"column",height:"100%",animation:"fu .3s"}}>
         <div className="rd-pad-h rd-wrap" style={{padding:"12px 22px",borderBottom:"1px solid var(--br)",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0,gap:10}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:28,height:28,borderRadius:6,background:"var(--blued)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div><div><h1 style={{fontSize:14,fontWeight:700,color:"var(--f)",lineHeight:1.2}}>Remote Desktop</h1><span style={{fontSize:9,color:"var(--f3)"}}>{devices.length} devices</span></div></div>

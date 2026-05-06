@@ -42,10 +42,20 @@ interface LoginResponse {
   user: AuthUser;
 }
 
-let authToken: string | null = null;
+// Persisted to localStorage so a page refresh doesn't kick the user back to
+// the login screen. XSS could read it, but the threat model for a self-hosted
+// home deployment doesn't justify the worse UX of memory-only storage.
+const TOKEN_KEY = "rd_jwt";
+let authToken: string | null = (() => {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+})();
 
 export const setToken = (t: string | null) => {
   authToken = t;
+  try {
+    if (t) localStorage.setItem(TOKEN_KEY, t);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* private mode / quota — fall back to in-memory only */ }
 };
 export const getToken = () => authToken;
 
