@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -72,6 +74,55 @@ class AgentService : LifecycleService() {
     // re-opens the app. PARTIAL_WAKE_LOCK keeps the CPU running just enough
     // to honour socket pings; the screen + radio still sleep normally.
     private var serviceWakeLock: PowerManager.WakeLock? = null
+    // Watchdog runs on the main Looper (NOT a coroutine), so it's immune to
+    // whatever wedges the workJob coroutine after a docker-restart-style
+    // disconnect. Every WATCHDOG_INTERVAL_MS it polls signalR.isConnected;
+    // if it's been false for > WATCHDOG_KILL_MS it cancels the wedged
+    // workJob and starts a fresh one via ensureRunning(). This is the safety
+    // net we tried to build via awaitClosed() + withTimeoutOrNull but which
+    // turned out to be silently broken on this build of the Java SignalR SDK.
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+    private var disconnectedAtMs: Long = 0L
+    private val watchdog = object : Runnable {
+        override fun run() {
+            try {
+                val connected = signalR?.isConnected == true
+                if (connected) {
+                    if (disconnectedAtMs != 0L) {
+                        Log.i(TAG, "Watchdog: connection restored")
+                        disconnectedAtMs = 0L
+                    }
+                } else if (signalR != null) {
+                    if (disconnectedAtMs == 0L) {
+                        disconnectedAtMs = System.currentTimeMillis()
+                        Log.w(TAG, "Watchdog: SignalR disconnected — starting timer")
+                    } else {
+                        val deadMs = System.currentTimeMillis() - disconnectedAtMs
+                        Log.w(TAG, "Watchdog: still disconnected for ${deadMs}ms")
+                        if (deadMs > WATCHDOG_KILL_MS) {
+                            Log.e(TAG, "Watchdog: dead $deadMs ms — force-restarting workJob")
+                            disconnectedAtMs = 0L
+                            workJob?.cancel()
+                            workJob = null
+                            val orphan = signalR
+                            signalR = null
+                            // Stop the orphan SignalR client off the main thread so
+                            // we don't block the watchdog. Resources may leak if it's
+                            // truly wedged; acceptable to get the agent back online.
+                            Thread {
+                                runCatching { kotlinx.coroutines.runBlocking { orphan?.stop() } }
+                            }.start()
+                            ensureRunning()
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Watchdog tick threw", t)
+            } finally {
+                watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+            }
+        }
+    }
     // Set by the most recent StartCapture push. The backend mints fresh creds
     // server-side per session and ships them as the SignalR payload, so the
     // agent never has to round-trip a separate REST call. Reset on detach.
@@ -104,81 +155,67 @@ class AgentService : LifecycleService() {
 
         startForegroundCompat(identity.serverUrl ?: "", capturing = false)
         acquireServiceWakeLock()
+        watchdogHandler.removeCallbacks(watchdog)
+        watchdogHandler.postDelayed(watchdog, WATCHDOG_INTERVAL_MS)
+        Log.i(TAG, "ensureRunning: starting workJob")
 
         workJob = lifecycleScope.launch {
-            // Outer loop keeps the agent reconnected on transient failures.
-            // Each iteration: get a fresh device token, open SignalR, run the
-            // status loop, then on disconnect/error back off and retry.
-            var backoff = 2_000L
-            while (isActive) {
-                try {
-                    val api = AgentApi(identity.serverUrl!!)
-                    val conn = api.connect(ConnectRequest(identity.deviceId!!, identity.trustKey!!))
+            // Single-pass: connect once, run the status loop until the hub
+            // closes (or hangs). All restart logic lives in the watchdog
+            // (Handler-based, runs on the main Looper) — when the workJob
+            // ends, signalR is null and the next watchdog tick re-runs
+            // ensureRunning(). Same when the workJob hangs: the watchdog
+            // notices isConnected == false for >30s and force-restarts.
+            try {
+                Log.i(TAG, "REST /api/agent/connect")
+                val api = AgentApi(identity.serverUrl!!)
+                val conn = api.connect(ConnectRequest(identity.deviceId!!, identity.trustKey!!))
+                Log.i(TAG, "REST connect ok, building SignalR client")
 
-                    val client = SignalRClient(
-                        baseUrl = identity.serverUrl!!,
-                        token = conn.token,
-                        onInput = { wire -> InputDispatcher.deliver(wire) },
-                        onStartCapture = { servers -> handleStartCapture(servers) },
-                        onStopCapture = { handleStopCapture() },
-                        onSdpAnswer = { sdp -> capture?.acceptRemoteAnswer(sdp) },
-                        onIceCandidate = { wire -> handleRemoteIce(wire) },
-                        onRevoked = { handleRevoked() },
-                        onClosed = { ex -> Log.w(TAG, "Hub closed", ex) }
-                    )
-                    signalR = client
-                    client.connect()
+                val client = SignalRClient(
+                    baseUrl = identity.serverUrl!!,
+                    token = conn.token,
+                    onInput = { wire -> InputDispatcher.deliver(wire) },
+                    onStartCapture = { servers -> handleStartCapture(servers) },
+                    onStopCapture = { handleStopCapture() },
+                    onSdpAnswer = { sdp -> capture?.acceptRemoteAnswer(sdp) },
+                    onIceCandidate = { wire -> handleRemoteIce(wire) },
+                    onRevoked = { handleRevoked() },
+                    onClosed = { ex -> Log.w(TAG, "Hub closed", ex) }
+                )
+                signalR = client
+                Log.i(TAG, "calling SignalR start")
+                client.connect()
+                Log.i(TAG, "SignalR connected, registering")
 
-                    val ctx = applicationContext
-                    val initial = StatusReporter.snapshot(ctx)
-                    client.register(initial.toRegistration())
+                val ctx = applicationContext
+                val initial = StatusReporter.snapshot(ctx)
+                client.register(initial.toRegistration())
+                Log.i(TAG, "register ok, entering status loop")
 
-                    backoff = 2_000L
-                    // Status loop runs as a child job; the OUTER loop blocks
-                    // on awaitClosed() so the SDK's onClosed event is the
-                    // single source of truth for "time to reconnect". Without
-                    // this, a stale `isConnected` flag (sometimes the MS
-                    // client doesn't flip it for tens of seconds after a
-                    // socket break) leaves the status loop spinning forever
-                    // and the dashboard stuck on "offline" until the user
-                    // toggles Stop / Start.
-                    val statusJob = launch { runStatusLoop(ctx, client) }
-                    try {
-                        val cause = client.awaitClosed()
-                        if (cause != null) Log.w(TAG, "Hub closed by SDK", cause)
-                        else Log.i(TAG, "Hub closed cleanly — reconnecting")
-                    } finally {
-                        statusJob.cancel()
-                    }
-                } catch (cancel: kotlinx.coroutines.CancellationException) {
-                    throw cancel
-                } catch (t: Throwable) {
-                    Log.w(TAG, "Agent loop iteration failed", t)
-                }
-
+                runStatusLoop(ctx, client)
+                Log.i(TAG, "status loop returned (connection lost)")
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (t: Throwable) {
+                Log.w(TAG, "workJob iteration failed", t)
+            } finally {
                 runCatching { signalR?.stop() }
                 signalR = null
-                handleStopCapture() // hub gone → drop any active capture too
-                if (!isActive) break
-                delay(backoff)
-                backoff = (backoff * 2).coerceAtMost(60_000L)
+                handleStopCapture()
             }
         }
     }
 
     private suspend fun runStatusLoop(ctx: Context, client: SignalRClient) {
+        // Periodic status push. Exits cleanly when isConnected goes false; if
+        // it doesn't (the SDK can stall), the watchdog still rescues us by
+        // killing the workJob. Failures are swallowed — the watchdog is the
+        // single source of truth for "should we reconnect".
         while (lifecycleScope.isActive && client.isConnected) {
             delay(STATUS_INTERVAL_MS)
             val snap = StatusReporter.snapshot(ctx)
-            val pushed = runCatching { client.reportStatus(snap.toStatus()) }
-            if (pushed.isFailure) {
-                // Push failed despite isConnected=true → socket is half-dead.
-                // Force a hub stop so onClosed fires and the outer awaitClosed
-                // unblocks instead of waiting for the SDK's keep-alive timeout.
-                Log.w(TAG, "reportStatus failed; tearing down hub", pushed.exceptionOrNull())
-                runCatching { client.stop() }
-                return
-            }
+            runCatching { client.reportStatus(snap.toStatus()) }
         }
     }
 
@@ -351,6 +388,8 @@ class AgentService : LifecycleService() {
     private fun stopSelfSafely() {
         workJob?.cancel()
         workJob = null
+        watchdogHandler.removeCallbacks(watchdog)
+        disconnectedAtMs = 0L
         // Tear down capture pipeline synchronously since we're about to cancel
         // the captureScope. close() is internally null-safe and idempotent.
         runCatching { capture?.close() }
@@ -367,6 +406,7 @@ class AgentService : LifecycleService() {
     override fun onDestroy() {
         workJob?.cancel()
         workJob = null
+        watchdogHandler.removeCallbacks(watchdog)
         // Belt-and-braces: stopSelfSafely already releases, but if the service
         // is destroyed via some other path (LMKD, crash) we still want the
         // wake lock back so the system isn't holding our CPU forever.
@@ -411,6 +451,11 @@ class AgentService : LifecycleService() {
         // Safety upper bound on the screen wake lock so a misbehaving session
         // can't drain the battery indefinitely. Re-acquired on each viewer.
         private const val MAX_WAKE_LOCK_MS = 4 * 60 * 60 * 1000L
+        // Watchdog tick + the disconnect grace period before we force-restart
+        // the workJob. Picked so a brief docker-restart blip recovers naturally
+        // (well within 30 s) but a truly wedged job is restarted within ~45 s.
+        private const val WATCHDOG_INTERVAL_MS = 15_000L
+        private const val WATCHDOG_KILL_MS = 30_000L
         const val ACTION_STOP = "com.remotedesktop.agent.action.STOP"
 
         fun start(context: Context) {
