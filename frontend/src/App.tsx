@@ -14,13 +14,6 @@ import {
   setWebRtcHandlers,
 } from "./services/signalr";
 
-// Demo accounts (hints only — real auth happens via the backend)
-const DEMO_ACCOUNTS = [
-  { username: "admin", password: "admin", role: "admin" },
-  { username: "user1", password: "user1", role: "user" },
-  { username: "user2", password: "user2", role: "user" },
-];
-
 // ─────────────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────────────
@@ -104,10 +97,6 @@ const Login=({onLogin}:{onLogin:(u:AuthUser,t:string)=>void})=>{
         <div><label style={{fontSize:10,fontWeight:600,color:"var(--f2)",display:"block",marginBottom:4}}>Password</label><input type="password" value={p} onChange={x=>{sP(x.target.value);sE("")}} style={I} onFocus={x=>(x.target as HTMLInputElement).style.borderColor="var(--blue)"} onBlur={x=>(x.target as HTMLInputElement).style.borderColor="var(--br)"} onKeyDown={x=>x.key==="Enter"&&go()}/></div>
         {e&&<div style={{padding:"6px 10px",borderRadius:5,background:"rgba(232,69,69,.07)",border:"1px solid rgba(232,69,69,.13)",color:"var(--red)",fontSize:11}}>{e}</div>}
         <Btn variant="primary" onClick={go} full disabled={busy}>{busy?"Signing in…":"Sign In"}</Btn>
-      </div>
-      <div style={{marginTop:18,padding:9,background:"var(--b2)",borderRadius:6,border:"1px solid var(--br)"}}>
-        <span style={{fontSize:8,color:"var(--f3)",textTransform:"uppercase",letterSpacing:".06em",fontWeight:600}}>Demo Accounts</span>
-        <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:5}}>{DEMO_ACCOUNTS.map(x=><button key={x.username} onClick={()=>{sU(x.username);sP(x.password);sE("")}} style={{all:"unset",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 6px",borderRadius:3,transition:"background .1s"}} onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background="var(--bh)"} onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background="transparent"}><span style={{fontSize:10,color:"var(--f2)",fontFamily:"var(--m)"}}>{x.username}/{x.password}</span><RB r={x.role}/></button>)}</div>
       </div>
     </div>
   </div>

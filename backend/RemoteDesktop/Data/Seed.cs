@@ -15,11 +15,7 @@ public static class Seed
 
         if (!await db.Users.AnyAsync())
         {
-            db.Users.AddRange(
-                MakeUser("admin", "admin", "Alex Morgan", "alex@co.dev", UserRole.Admin),
-                MakeUser("user1", "user1", "Jordan Lee", "jordan@co.dev", UserRole.User),
-                MakeUser("user2", "user2", "Sam Chen", "sam@co.dev", UserRole.User)
-            );
+            db.Users.Add(MakeUser("admin", "admin", "Alex Morgan", "alex@co.dev", UserRole.Admin));
             await db.SaveChangesAsync();
         }
 

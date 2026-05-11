@@ -165,7 +165,7 @@ curl -k https://remote.example.com/healthz       # → {"status":"ok"}
 
 ### 7. Sign in and rotate the demo password
 
-The seed creates `admin / admin` on first boot (plus two demo `user1` / `user2` accounts) and **no devices** — the dashboard starts empty. Sign in to `https://remote.example.com` and immediately change the admin password via the user menu → Change Password. Delete the `user1` / `user2` accounts (User Management → Delete) unless you actually want them.
+The seed creates a single `admin / admin` account on first boot and **no devices** — the dashboard starts empty. Sign in to `https://remote.example.com` and immediately change the admin password via the user menu → Change Password. Create additional users from User Management as needed.
 
 ### 8. Pair phones
 
@@ -203,14 +203,12 @@ npm run dev
 
 The Vite dev server proxies `/api` and `/hubs` to `http://localhost:5000` (configured in [frontend/vite.config.ts](frontend/vite.config.ts)).
 
-Android agent — see [android/README.md](android/README.md) for SDK setup and pairing.
+Android agent:
 
-## Demo accounts
+```bash
+cd android
+./gradlew :app:assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
-| Username | Password | Role  |
-|----------|----------|-------|
-| admin    | admin    | admin |
-| user1    | user1    | user  |
-| user2    | user2    | user  |
+See [android/README.md](android/README.md) for SDK setup and pairing.
 
-Admins can pair, rename, revoke, force-disconnect viewers, and remove devices entirely; regular users can connect to any device and end their own session. The seed inserts only these three accounts — no demo devices, the dashboard starts empty.
