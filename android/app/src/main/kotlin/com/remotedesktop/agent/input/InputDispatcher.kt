@@ -1,5 +1,6 @@
 package com.remotedesktop.agent.input
 
+import android.util.Log
 import com.remotedesktop.agent.models.WireInputEvent
 import java.util.concurrent.ConcurrentLinkedQueue
 
@@ -17,20 +18,31 @@ object InputDispatcher {
 
     fun attach(sink: (WireInputEvent) -> Unit) {
         this.sink = sink
+        Log.i(TAG, "sink attached (drained ${pending.size} buffered events)")
         while (true) {
             val ev = pending.poll() ?: break
             sink(ev)
         }
     }
 
-    fun detach() { sink = null }
+    fun detach() {
+        Log.i(TAG, "sink detached")
+        sink = null
+    }
 
     fun deliver(event: WireInputEvent) {
         val s = sink
-        if (s != null) s(event) else pending.offer(event)
+        if (s != null) {
+            Log.d(TAG, "deliver ${event.type} → sink")
+            s(event)
+        } else {
+            Log.w(TAG, "deliver ${event.type} → buffered (no sink, pending=${pending.size})")
+            pending.offer(event)
+        }
         // Keep the buffer bounded — drop oldest beyond a small head.
         while (pending.size > BUFFER_MAX) pending.poll()
     }
 
     private const val BUFFER_MAX = 32
+    private const val TAG = "InputDispatcher"
 }

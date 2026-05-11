@@ -350,7 +350,11 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
     const pc=new RTCPeerConnection({iceServers});
     pcRef.current=pc;
 
+    const tag=`[rtc ${device.id.slice(0,8)}]`;
+    console.info(tag,"peer created",{ts:new Date().toISOString(),iceServers:iceServers.length});
+
     pc.ontrack=(ev)=>{
+      console.info(tag,"ontrack",{ts:new Date().toISOString(),kind:ev.track.kind,streams:ev.streams.length});
       const v=videoRef.current;
       if(v&&ev.streams[0]) v.srcObject=ev.streams[0];
       // Receiving a track is a reliable "media is flowing" signal. Chrome
@@ -364,27 +368,34 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
         candidate:ev.candidate.candidate,
         sdpMid:ev.candidate.sdpMid,
         sdpMLineIndex:ev.candidate.sdpMLineIndex,
-      })?.catch(()=>{});
+      })?.catch((e)=>console.warn(tag,"sendIceCandidate failed",e));
     };
     pc.onconnectionstatechange=()=>{
       const s=pc.connectionState;
+      console.info(tag,"connectionState",{ts:new Date().toISOString(),state:s});
       if(s==="connected") sConn(false);
       else if(s==="failed"||s==="closed") sConn(true);
     };
     pc.oniceconnectionstatechange=()=>{
       const s=pc.iceConnectionState;
+      console.info(tag,"iceConnectionState",{ts:new Date().toISOString(),state:s});
       if(s==="connected"||s==="completed") sConn(false);
+    };
+    pc.onsignalingstatechange=()=>{
+      console.info(tag,"signalingState",{ts:new Date().toISOString(),state:pc.signalingState});
     };
 
     setWebRtcHandlers({
       onSdpOffer: async (devId,sdp) => {
         if(devId!==device.id) return;
         try {
+          console.info(tag,"applying remote offer",{ts:new Date().toISOString(),signalingState:pc.signalingState});
           await pc.setRemoteDescription({type:"offer",sdp});
           const answer=await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await sendSdpAnswer(device.id,answer.sdp??"");
-        } catch (e) { console.warn("WebRTC answer failed",e); }
+          console.info(tag,"answer sent",{ts:new Date().toISOString()});
+        } catch (e) { console.warn(tag,"WebRTC answer failed",e); }
       },
       onIceCandidate: async (devId,c) => {
         if(devId!==device.id||!c.candidate) return;
@@ -394,11 +405,12 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
             sdpMid: c.sdpMid ?? undefined,
             sdpMLineIndex: c.sdpMLineIndex ?? undefined,
           });
-        } catch (e) { console.warn("addIceCandidate failed",e); }
+        } catch (e) { console.warn(tag,"addIceCandidate failed",e); }
       },
     });
 
     return ()=>{
+      console.info(tag,"peer closing (effect cleanup)",{ts:new Date().toISOString(),lastState:pc.connectionState});
       setWebRtcHandlers(null);
       try { pc.close(); } catch { /* ignore */ }
       pcRef.current=null;
@@ -406,6 +418,39 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
   },[device.id]);
 
   useEffect(()=>{if(conn)return;const i=setInterval(()=>sSt(s=>s+1),1000);return()=>clearInterval(i)},[conn]);
+
+  // Health probe: every 10s log WebRTC inbound stats so we can tell whether
+  // media is still flowing when the UI looks "alive but stuck".
+  useEffect(()=>{
+    const tag=`[rtc ${device.id.slice(0,8)}]`;
+    let prevBytes=0, prevFrames=0;
+    const i=setInterval(async()=>{
+      const pc=pcRef.current;
+      if(!pc) return;
+      try{
+        const stats=await pc.getStats();
+        let bytes=0, frames=0, packetsLost=0, jitter=0;
+        stats.forEach((r:any)=>{
+          if(r.type==="inbound-rtp" && r.kind==="video"){
+            bytes=r.bytesReceived ?? 0;
+            frames=r.framesDecoded ?? 0;
+            packetsLost=r.packetsLost ?? 0;
+            jitter=r.jitter ?? 0;
+          }
+        });
+        const dBytes=bytes-prevBytes, dFrames=frames-prevFrames;
+        prevBytes=bytes; prevFrames=frames;
+        console.info(tag,"stats",{
+          ts:new Date().toISOString(),
+          connState:pc.connectionState, iceState:pc.iceConnectionState,
+          deltaBytes:dBytes, deltaFrames:dFrames,
+          totalBytes:bytes, totalFrames:frames,
+          packetsLost, jitter,
+        });
+      }catch(e){console.warn(tag,"getStats failed",e);}
+    },10000);
+    return ()=>clearInterval(i);
+  },[device.id]);
 
   const localToPhone=useCallback((clientX:number,clientY:number)=>{
     const el=overlayRef.current;
@@ -438,11 +483,15 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
     const dist=Math.hypot(end.x-start.x,end.y-start.y);
     // Threshold roughly matches Android's tap slop. Below it = tap; above = swipe.
     if(dist<24){
-      sendInput(device.id,{type:"tap",x:end.x,y:end.y})?.catch(()=>{});
+      const p=sendInput(device.id,{type:"tap",x:end.x,y:end.y});
+      if(!p) console.warn("[input] tap not sent — hub down");
+      else p.catch((e)=>console.warn("[input] tap rejected",e));
       addLog("TAP",`(${end.x}, ${end.y})`);
     }else{
       const dur=Math.round(Math.min(800,Math.max(120,performance.now()-start.t)));
-      sendInput(device.id,{type:"swipe",startX:start.x,startY:start.y,endX:end.x,endY:end.y,durationMs:dur})?.catch(()=>{});
+      const p=sendInput(device.id,{type:"swipe",startX:start.x,startY:start.y,endX:end.x,endY:end.y,durationMs:dur});
+      if(!p) console.warn("[input] swipe not sent — hub down");
+      else p.catch((e)=>console.warn("[input] swipe rejected",e));
       addLog("SWIPE",`${Math.round(dist)}px ${dur}ms`);
     }
   },[addLog,conn,device.id,localToPhone]);
@@ -452,12 +501,16 @@ const RemoteView=({device,iceServers,onBack}:{device:Device;iceServers:RTCIceSer
     e.preventDefault();
     const p=localToPhone(e.clientX,e.clientY);
     if(!p) return;
-    sendInput(device.id,{type:"scroll",x:p.x,y:p.y,deltaY:e.deltaY})?.catch(()=>{});
+    const r=sendInput(device.id,{type:"scroll",x:p.x,y:p.y,deltaY:e.deltaY});
+    if(!r) console.warn("[input] scroll not sent — hub down");
+    else r.catch((e)=>console.warn("[input] scroll rejected",e));
     addLog("SCROLL",e.deltaY>0?"DOWN":"UP");
   },[addLog,conn,device.id,localToPhone]);
 
   const sendKey=useCallback((keyCode:string,label:string)=>{
-    sendInput(device.id,{type:"key",keyCode})?.catch(()=>{});
+    const p=sendInput(device.id,{type:"key",keyCode});
+    if(!p) console.warn("[input] key not sent — hub down",{keyCode});
+    else p.catch((e)=>console.warn("[input] key rejected",{keyCode,e}));
     addLog("KEY",label);
   },[addLog,device.id]);
 

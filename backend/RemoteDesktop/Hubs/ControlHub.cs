@@ -20,13 +20,15 @@ public class ControlHub(
 {
     public override async Task OnConnectedAsync()
     {
-        log.LogInformation("SignalR connection {ConnectionId} for {User}", Context.ConnectionId, Context.User?.Identity?.Name);
+        log.LogInformation("ControlHub connect {ConnectionId} user={User}", Context.ConnectionId, Context.User?.Identity?.Name);
         await Clients.Caller.SendAsync("DeviceListUpdated", await BuildDeviceListAsync());
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        log.LogInformation("ControlHub disconnect {ConnectionId} user={User} reason={Reason}",
+            Context.ConnectionId, Context.User?.Identity?.Name, exception?.Message ?? "(clean)");
         // Browser closed mid-session — end any session this connection was viewing
         // and tell the agent to stop capturing. We don't track which deviceId this
         // connection was bound to; instead we rely on UnbindViewer matching by id.
@@ -34,6 +36,8 @@ public class ControlHub(
         if (caller is not null)
         {
             var owned = await sessions.ActiveForUserAsync(caller.Id);
+            log.LogInformation("ControlHub disconnect {ConnectionId} ending {Count} session(s)",
+                Context.ConnectionId, owned.Count);
             foreach (var s in owned)
             {
                 await sessions.EndAsync(s.Id, DisconnectReason.Network);
@@ -48,6 +52,8 @@ public class ControlHub(
     public async Task<object> WatchDevice(Guid deviceId)
     {
         var caller = await GetCallerOrThrowAsync();
+        log.LogInformation("WatchDevice {DeviceId} by {User} on {ConnectionId}",
+            deviceId, caller.DisplayName, Context.ConnectionId);
         var device = await devices.GetAsync(deviceId) ?? throw new HubException("device_not_found");
 
         var active = await sessions.ActiveForAsync(deviceId);
@@ -58,6 +64,7 @@ public class ControlHub(
         if (active is not null && active.UserId == caller.Id)
         {
             sessionId = active.Id;
+            log.LogInformation("WatchDevice {DeviceId} reusing existing session {SessionId}", deviceId, sessionId);
         }
         else
         {
@@ -69,7 +76,13 @@ public class ControlHub(
         // start capture + create a WebRTC offer. If the agent is offline the
         // signal is silently dropped — the agent's OnConnectedAsync will see a
         // viewer is bound and send "StartCapture" itself when it reconnects.
+        var prevViewer = signaling.ViewerOf(deviceId);
         signaling.BindViewer(deviceId, Context.ConnectionId);
+        if (prevViewer is not null && prevViewer != Context.ConnectionId)
+            log.LogWarning("WatchDevice {DeviceId} replaced stale viewer {Prev} with {New}",
+                deviceId, prevViewer, Context.ConnectionId);
+        var agentConn = signaling.AgentOf(deviceId);
+        log.LogInformation("WatchDevice {DeviceId} agent={Agent}", deviceId, agentConn ?? "(none)");
         await NotifyAgentStartCapture(deviceId);
         await BroadcastDeviceListAsync();
 
@@ -97,8 +110,14 @@ public class ControlHub(
         var caller = await GetCallerOrThrowAsync();
         var active = await sessions.ActiveForAsync(deviceId);
         if (active is null || active.UserId != caller.Id)
+        {
+            log.LogWarning("SendInput {DeviceId} rejected — caller={User} active={Active}",
+                deviceId, caller.DisplayName, active is null ? "(none)" : $"owner={active.UserId}");
             throw new HubException("not_session_owner");
-
+        }
+        var agent = signaling.AgentOf(deviceId);
+        log.LogInformation("SendInput {DeviceId} type={Type} agent={Agent}",
+            deviceId, input.Type, agent ?? "(unbound)");
         await inputRelay.QueueAsync(deviceId, input);
     }
 
@@ -121,7 +140,12 @@ public class ControlHub(
     {
         if (!await CallerOwnsSessionAsync(deviceId)) throw new HubException("not_session_owner");
         var agent = signaling.AgentOf(deviceId);
-        if (agent is null) return;
+        if (agent is null)
+        {
+            log.LogWarning("SendSdpAnswer {DeviceId} dropped — no agent bound", deviceId);
+            return;
+        }
+        log.LogInformation("SendSdpAnswer {DeviceId} → agent {Agent} (sdpLen={Len})", deviceId, agent, sdp?.Length ?? 0);
         await agentHub.Clients.Client(agent).SendAsync("ReceiveSdpAnswer", sdp);
     }
 
@@ -143,7 +167,12 @@ public class ControlHub(
     private Task NotifyAgentStartCapture(Guid deviceId)
     {
         var agent = signaling.AgentOf(deviceId);
-        if (agent is null) return Task.CompletedTask;
+        if (agent is null)
+        {
+            log.LogWarning("StartCapture {DeviceId} dropped — no agent connection", deviceId);
+            return Task.CompletedTask;
+        }
+        log.LogInformation("StartCapture → agent {Agent} for {DeviceId}", agent, deviceId);
         // Agent's iceServers are minted with the device-id as the subject so
         // coturn's logs attribute relay traffic to the device, not the viewer.
         var iceServers = turn.BuildIceServers($"device:{deviceId}");

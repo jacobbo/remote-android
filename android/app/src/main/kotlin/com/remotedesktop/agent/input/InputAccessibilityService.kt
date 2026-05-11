@@ -1,6 +1,7 @@
 package com.remotedesktop.agent.input
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.GestureResultCallback
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
@@ -33,6 +34,7 @@ class InputAccessibilityService : AccessibilityService() {
     override fun onInterrupt() { /* no-op */ }
 
     private fun dispatchEvent(event: WireInputEvent) {
+        Log.i(TAG, "dispatchEvent ${event.type}")
         try {
             when (event.type.lowercase()) {
                 "tap" -> tap(event.x ?: return, event.y ?: return)
@@ -55,10 +57,16 @@ class InputAccessibilityService : AccessibilityService() {
         }
     }
 
+    private val gestureCallback = object : GestureResultCallback() {
+        override fun onCompleted(d: GestureDescription?) { Log.d(TAG, "gesture completed") }
+        override fun onCancelled(d: GestureDescription?) { Log.w(TAG, "gesture cancelled") }
+    }
+
     private fun tap(x: Double, y: Double) {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val stroke = GestureDescription.StrokeDescription(path, 0L, 60L)
-        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        val ok = dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), gestureCallback, null)
+        if (!ok) Log.w(TAG, "tap dispatchGesture returned false (x=$x y=$y) — service may be busy")
     }
 
     private fun swipe(sx: Double, sy: Double, ex: Double, ey: Double, durationMs: Int) {
@@ -67,7 +75,8 @@ class InputAccessibilityService : AccessibilityService() {
             lineTo(ex.toFloat(), ey.toFloat())
         }
         val stroke = GestureDescription.StrokeDescription(path, 0L, durationMs.toLong().coerceAtLeast(20L))
-        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        val ok = dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), gestureCallback, null)
+        if (!ok) Log.w(TAG, "swipe dispatchGesture returned false ($sx,$sy → $ex,$ey)")
     }
 
     private fun key(keyCode: String) {

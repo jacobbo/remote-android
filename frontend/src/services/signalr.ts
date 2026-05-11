@@ -39,20 +39,29 @@ export const connectHub = async (
   connection = new HubConnectionBuilder()
     .withUrl("/hubs/control", { accessTokenFactory: () => getToken() ?? "" })
     .withAutomaticReconnect()
-    .configureLogging(LogLevel.Warning)
+    .configureLogging(LogLevel.Information)
     .build();
+
+  connection.onclose((err) =>
+    console.warn("[hub] closed", { ts: new Date().toISOString(), state: connection?.state, err: err?.message ?? err }));
+  connection.onreconnecting((err) =>
+    console.warn("[hub] reconnecting", { ts: new Date().toISOString(), err: err?.message ?? err }));
+  connection.onreconnected((newId) =>
+    console.info("[hub] reconnected", { ts: new Date().toISOString(), newConnectionId: newId }));
 
   connection.on("DeviceListUpdated", onDevices);
   connection.on("SessionEnded", onSessionEnded);
   connection.on("PairingCompleted", onPairingCompleted);
-  connection.on("ReceiveSdpOffer", (deviceId: string, sdp: string) =>
-    webrtcHandlers?.onSdpOffer(deviceId, sdp)
-  );
-  connection.on("ReceiveIceCandidate", (deviceId: string, candidate: IceCandidateWire) =>
-    webrtcHandlers?.onIceCandidate(deviceId, candidate)
-  );
+  connection.on("ReceiveSdpOffer", (deviceId: string, sdp: string) => {
+    console.info("[hub] ReceiveSdpOffer", { ts: new Date().toISOString(), deviceId, sdpLen: sdp?.length, hasHandler: !!webrtcHandlers });
+    webrtcHandlers?.onSdpOffer(deviceId, sdp);
+  });
+  connection.on("ReceiveIceCandidate", (deviceId: string, candidate: IceCandidateWire) => {
+    webrtcHandlers?.onIceCandidate(deviceId, candidate);
+  });
 
   await connection.start();
+  console.info("[hub] started", { ts: new Date().toISOString(), connectionId: connection.connectionId, state: connection.state });
   return connection;
 };
 
@@ -63,8 +72,20 @@ export const disconnectHub = async () => {
   }
 };
 
+const invokeOrWarn = <T = unknown>(method: string, ...args: unknown[]): Promise<T> | undefined => {
+  if (!connection) {
+    console.warn(`[hub] ${method} dropped — no connection`, { ts: new Date().toISOString() });
+    return undefined;
+  }
+  if (connection.state !== HubConnectionState.Connected) {
+    console.warn(`[hub] ${method} dropped — state=${connection.state}`, { ts: new Date().toISOString() });
+    return undefined;
+  }
+  return connection.invoke<T>(method, ...args);
+};
+
 export const watchDevice = (deviceId: string) =>
-  connection?.invoke<{
+  invokeOrWarn<{
     ok?: boolean;
     error?: string;
     connectedUser?: string;
@@ -73,16 +94,16 @@ export const watchDevice = (deviceId: string) =>
   }>("WatchDevice", deviceId);
 
 export const stopWatching = (deviceId: string) =>
-  connection?.invoke("StopWatching", deviceId);
+  invokeOrWarn("StopWatching", deviceId);
 
 export const sendInput = (deviceId: string, input: any) =>
-  connection?.invoke("SendInput", deviceId, input);
+  invokeOrWarn("SendInput", deviceId, input);
 
 export const forceDisconnect = (deviceId: string) =>
-  connection?.invoke("ForceDisconnect", deviceId);
+  invokeOrWarn("ForceDisconnect", deviceId);
 
 export const sendSdpAnswer = (deviceId: string, sdp: string) =>
-  connection?.invoke("SendSdpAnswer", deviceId, sdp);
+  invokeOrWarn("SendSdpAnswer", deviceId, sdp);
 
 export const sendIceCandidate = (deviceId: string, candidate: IceCandidateWire) =>
-  connection?.invoke("SendIceCandidate", deviceId, candidate);
+  invokeOrWarn("SendIceCandidate", deviceId, candidate);

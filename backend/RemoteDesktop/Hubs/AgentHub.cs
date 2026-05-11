@@ -58,8 +58,11 @@ public class AgentHub(
         // came online — or the agent reconnected mid-session), kick a fresh
         // capture handshake so signaling can converge again. Carries the same
         // iceServers payload as the normal WatchDevice→StartCapture push.
-        if (signaling.ViewerOf(deviceId) is not null)
+        var existingViewer = signaling.ViewerOf(deviceId);
+        if (existingViewer is not null)
         {
+            log.LogInformation("Agent {DeviceId} found waiting viewer {Viewer} — sending StartCapture",
+                deviceId, existingViewer);
             var iceServers = turn.BuildIceServers($"device:{deviceId}");
             await Clients.Caller.SendAsync("StartCapture", iceServers);
         }
@@ -70,6 +73,8 @@ public class AgentHub(
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         var deviceId = TryGetDeviceId();
+        log.LogInformation("AgentHub disconnect {DeviceId} {ConnectionId} reason={Reason}",
+            deviceId, Context.ConnectionId, exception?.Message ?? "(clean)");
         if (deviceId is not null)
         {
             // Only flip to offline if THIS connection was still the registered one.
@@ -127,9 +132,10 @@ public class AgentHub(
         var viewer = signaling.ViewerOf(deviceId);
         if (viewer is null)
         {
-            log.LogDebug("SDP offer from {DeviceId} dropped — no viewer bound", deviceId);
+            log.LogWarning("SDP offer from {DeviceId} dropped — no viewer bound (sdpLen={Len})", deviceId, sdp?.Length ?? 0);
             return;
         }
+        log.LogInformation("SDP offer {DeviceId} → viewer {Viewer} (sdpLen={Len})", deviceId, viewer, sdp?.Length ?? 0);
         await controlHub.Clients.Client(viewer).SendAsync("ReceiveSdpOffer", deviceId, sdp);
     }
 
@@ -147,17 +153,33 @@ public class AgentHub(
         // accessor — the Hub instance is disposed when OnConnectedAsync returns,
         // so this background loop would otherwise be sending through a dead
         // reference and silently no-op.
+        var startedAt = DateTime.UtcNow;
+        var sent = 0;
+        log.LogInformation("Drain start {DeviceId} {ConnectionId}", deviceId, connectionId);
         try
         {
             await foreach (var input in inputRelay.ReadAllAsync(deviceId, ct))
             {
+                var sendSw = System.Diagnostics.Stopwatch.StartNew();
                 await agentHub.Clients.Client(connectionId).SendAsync("ReceiveInput", input, ct);
+                sendSw.Stop();
+                sent++;
+                if (sendSw.ElapsedMilliseconds > 500)
+                    log.LogWarning("Drain {DeviceId} slow SendAsync {Ms}ms (sent={Sent})",
+                        deviceId, sendSw.ElapsedMilliseconds, sent);
             }
+            log.LogInformation("Drain end {DeviceId} {ConnectionId} sent={Sent} after={Dur}",
+                deviceId, connectionId, sent, DateTime.UtcNow - startedAt);
         }
-        catch (OperationCanceledException) { /* expected on disconnect */ }
+        catch (OperationCanceledException)
+        {
+            log.LogInformation("Drain canceled {DeviceId} {ConnectionId} sent={Sent} after={Dur}",
+                deviceId, connectionId, sent, DateTime.UtcNow - startedAt);
+        }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "Input drain loop ended for {DeviceId}", deviceId);
+            log.LogWarning(ex, "Drain failed {DeviceId} {ConnectionId} sent={Sent} after={Dur}",
+                deviceId, connectionId, sent, DateTime.UtcNow - startedAt);
         }
     }
 

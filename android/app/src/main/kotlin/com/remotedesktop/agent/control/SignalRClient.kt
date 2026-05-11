@@ -61,13 +61,31 @@ class SignalRClient(
         h.keepAliveInterval = 10_000
         h.serverTimeout = 20_000
 
-        h.on("ReceiveInput", { event -> onInput(event) }, WireInputEvent::class.java)
-        h.on("StartCapture", { servers -> onStartCapture(servers) }, Array<IceServerWire>::class.java)
-        h.on("StopCapture", { onStopCapture() })
-        h.on("ReceiveSdpAnswer", { sdp -> onSdpAnswer(sdp) }, String::class.java)
+        h.on("ReceiveInput", { event ->
+            Log.d(TAG, "ReceiveInput ${event.type}")
+            onInput(event)
+        }, WireInputEvent::class.java)
+        h.on("StartCapture", { servers ->
+            Log.i(TAG, "StartCapture (${servers.size} ice servers)")
+            onStartCapture(servers)
+        }, Array<IceServerWire>::class.java)
+        h.on("StopCapture", {
+            Log.i(TAG, "StopCapture")
+            onStopCapture()
+        })
+        h.on("ReceiveSdpAnswer", { sdp ->
+            Log.i(TAG, "ReceiveSdpAnswer (len=${sdp.length})")
+            onSdpAnswer(sdp)
+        }, String::class.java)
         h.on("ReceiveIceCandidate", { c -> onIceCandidate(c) }, IceCandidateWire::class.java)
-        h.on("Revoked", { onRevoked() })
-        h.onClosed { ex -> onClosed(ex) }
+        h.on("Revoked", {
+            Log.w(TAG, "Revoked")
+            onRevoked()
+        })
+        h.onClosed { ex ->
+            Log.w(TAG, "Hub onClosed: ${ex?.message ?: "(clean)"}")
+            onClosed(ex)
+        }
 
         hub = h
         h.start().awaitCompletable()
