@@ -98,6 +98,12 @@ const Login=({onLogin}:{onLogin:(u:AuthUser,t:string)=>void})=>{
         {e&&<div style={{padding:"6px 10px",borderRadius:5,background:"rgba(232,69,69,.07)",border:"1px solid rgba(232,69,69,.13)",color:"var(--red)",fontSize:11}}>{e}</div>}
         <Btn variant="primary" onClick={go} full disabled={busy}>{busy?"Signing in…":"Sign In"}</Btn>
       </div>
+      <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid var(--br)",textAlign:"center"}}>
+        <a href="/downloads/app-debug.apk" download style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:"var(--f2)",textDecoration:"none",transition:"color .15s"}} onMouseEnter={x=>(x.currentTarget as HTMLAnchorElement).style.color="var(--blue)"} onMouseLeave={x=>(x.currentTarget as HTMLAnchorElement).style.color="var(--f2)"}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>
+          Download Android agent APK
+        </a>
+      </div>
     </div>
   </div>
 };

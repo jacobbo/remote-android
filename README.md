@@ -282,15 +282,35 @@ Visit `https://nomain.uk` and log in with the `ADMIN_EMAIL` / `ADMIN_PASSWORD` y
 
 If you forgot to set them, the seed falls back to `admin@local / admin` and logs a warning — change the password immediately via the user menu.
 
-### 9. Build and install the agent APK
+### 9. Build and publish the agent APK
+
+Build the APK locally:
 
 ```bash
 cd android
 ./gradlew :app:assembleDebug
+# APK lands at android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Two ways to get it onto a phone:
+
+**a) Install directly via ADB** (your own dev phone over USB):
+
+```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The debug APK is fine for personal use. For a release APK, see [android/README.md](android/README.md).
+**b) Publish on the web for users to self-install** (the dashboard already shows a "Agent APK" download link in the header). Copy the APK to the VPS's `downloads/` directory:
+
+```bash
+# from your laptop, after the gradlew build:
+scp app/build/outputs/apk/debug/app-debug.apk \
+    deploy@89.117.109.152:/opt/rdp/downloads/
+```
+
+nginx serves it at `https://nomain.uk/downloads/app-debug.apk` with `Content-Disposition: attachment` so Android offers to install it directly. The `downloads/` directory is gitignored, so the APK never enters the repo. Re-upload whenever you rebuild.
+
+The debug APK is fine for personal use. For a release APK (signed, stripped of debug symbols), see [android/README.md](android/README.md).
 
 ### 10. Pair the phone
 

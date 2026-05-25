@@ -71,6 +71,11 @@ services:
       # docker-compose.override.yml overrides this mount with the plain-HTTP
       # nginx.conf for LAN dev.
       - ./web/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      # Public downloads (Android agent APK). Drop app-debug.apk into
+      # ./downloads/ on the host — nginx serves it at
+      # https://<host>/downloads/app-debug.apk. File is gitignored so it
+      # doesn't bloat the repo.
+      - ./downloads:/usr/share/nginx/html/downloads:ro
     depends_on:
       - api
     restart: unless-stopped

@@ -57,3 +57,4 @@ services:
     volumes:
       - ./certs:/etc/nginx/certs:ro
       - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./downloads:/usr/share/nginx/html/downloads:ro
