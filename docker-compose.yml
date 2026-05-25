@@ -7,8 +7,9 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
     volumes:
       - pg-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # No public port mapping. Postgres is reachable from the api service over
+    # the internal app-net network only. For local-machine psql access during
+    # dev, add a ports: ["127.0.0.1:5432:5432"] override in compose.override.yml.
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rdadmin} -d remotedesktop"]
@@ -18,12 +19,16 @@ services:
     networks:
       - app-net
 
-  backend:
+  api:
     build:
-      context: ./backend
+      context: ./api
       dockerfile: Dockerfile
+    # Bound to loopback only — the public-facing path is via the web service's
+    # nginx (/api and /hubs paths proxy to api:8080 over app-net). The
+    # 127.0.0.1 binding lets you curl localhost:5000 on the host for debugging
+    # without exposing the API to the internet.
     ports:
-      - "5000:8080"
+      - "127.0.0.1:5000:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
@@ -32,12 +37,18 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
       # Pairing — phone-reachable URL embedded in the QR code (see .env.example).
       - Pairing__BaseUrl=${PAIRING_BASE_URL:-}
-      # TURN — when unset the backend returns an empty iceServers list and
-      # WebRTC falls back to host candidates (LAN-only).
+      # TURN is OFF by default. Backend serves Cloudflare's public STUN
+      # automatically; that's sufficient for direct P2P with NAT traversal.
+      # To enable self-hosted or hosted TURN, set both vars below — when set,
+      # the backend mints ephemeral credentials and adds TURN to iceServers.
       - Turn__Secret=${TURN_SECRET:-}
       - Turn__Hostname=${TURN_HOSTNAME:-}
       - Turn__Port=${TURN_PORT:-3478}
-      - Turn__Realm=${TURN_REALM:-}
+      # Initial admin seeded on first boot only (no-op once the Users table
+      # has any row). Both required in production; otherwise the seed falls
+      # back to admin/admin and logs a loud warning.
+      - Admin__Email=${ADMIN_EMAIL:-}
+      - Admin__Password=${ADMIN_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
@@ -45,63 +56,35 @@ services:
     networks:
       - app-net
 
-  frontend:
+  web:
     build:
-      context: ./frontend
+      context: ./web
       dockerfile: Dockerfile
     ports:
       - "3000:80"
-      - "${FRONTEND_TLS_PORT:-443}:443"
+      - "${WEB_TLS_PORT:-443}:443"
     volumes:
-      # Bind-mounted into the container so the entrypoint script can switch
-      # to the TLS config when an origin.pem is present. Empty in dev →
-      # nginx stays on plain HTTP and 443 just sits idle.
+      # Cloudflare Origin Certificate (origin.pem + origin-key.pem) lands here.
+      # nginx.prod.conf references these paths.
       - ./certs:/etc/nginx/certs:ro
+      # Production nginx config — terminates TLS on 443, redirects 80→443.
+      # docker-compose.override.yml overrides this mount with the plain-HTTP
+      # nginx.conf for LAN dev.
+      - ./web/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - backend
+      - api
     restart: unless-stopped
     networks:
       - app-net
 
-  # coturn TURN/STUN relay. Only used when remote browsers need to traverse
-  # NAT to reach the agent's WebRTC stream. Opt-in via the `prod` profile so
-  # `docker compose up` on a dev machine doesn't spin it up.
-  #
-  # network_mode: host is required because coturn negotiates relay endpoints
-  # by IP/port and Docker's bridge NAT mangles those addresses, breaking ICE
-  # for any client that isn't on the same bridge network. The relay range
-  # (49152–49252) and the listening ports (3478 UDP+TCP, 5349 TLS) need to be
-  # forwarded on your home router to this host.
-  turn:
-    profiles: ["prod"]
-    image: coturn/coturn:latest
-    network_mode: host
-    volumes:
-      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
-      - ./certs:/etc/coturn/certs:ro
-    restart: unless-stopped
-
-  # Cloudflare DDNS — keeps the proxied web-UI record AND the DNS-only TURN
-  # record pointed at this host's current public IP. A single container handles
-  # both records via comma-separated DOMAINS + a PROXIED boolean expression
-  # (favonia uses an `is(<fqdn>)` syntax to flip per-domain).
-  #
-  # Enabled only under the `prod` profile so dev runs skip it.
-  ddns:
-    profiles: ["prod"]
-    image: favonia/cloudflare-ddns:latest
-    read_only: true
-    cap_drop: [all]
-    security_opt: [no-new-privileges:true]
-    environment:
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
-      - DOMAINS=${CLOUDFLARE_DOMAINS}
-      - PROXIED=${PROXIED:-false}
-      - IP4_PROVIDER=cloudflare.trace
-      - IP6_PROVIDER=none
-    restart: unless-stopped
-    networks:
-      - app-net
+  # NOTE: no coturn service. The backend hands clients Cloudflare's public
+  # STUN server (stun:stun.cloudflare.com:3478) for NAT traversal; direct
+  # peer-to-peer WebRTC works for the vast majority of NAT configurations
+  # without needing a media relay. If you later want TURN fallback for the
+  # rare symmetric-NAT or UDP-blocked cases, either self-host coturn on a
+  # second VPS or use a hosted service (Twilio, Metered.ca, etc.) and set
+  # TURN_SECRET + TURN_HOSTNAME in .env — the backend already supports
+  # appending TURN entries to iceServers when those are configured.
 
 volumes:
   pg-data:

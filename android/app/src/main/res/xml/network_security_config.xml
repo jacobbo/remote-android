@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext HTTP is allowed only for explicit dev/emulator endpoints:
+      localhost   — testing on the device itself
+      10.0.2.2    — the Android emulator's loopback to the host machine
+    Production pairings (rdpairs://) dial HTTPS and never need a cleartext
+    exception. If you're pairing against a LAN backend on a private IP, add
+    that IP here in your local checkout (don't commit it).
+-->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">192.168.1.84</domain>
     </domain-config>
 </network-security-config>

@@ -1,8 +1,7 @@
 # Origin certificates
 
 Drop the Cloudflare Origin Certificate here as `origin.pem` + `origin-key.pem`
-to enable TLS termination on the frontend nginx (port 443) and on coturn
-(TURNS / port 5349 — uncomment the `cert=`/`pkey=` lines in `turnserver.conf`).
+to enable TLS termination on the web service's nginx (port 443).
 
 Generated under Cloudflare → SSL/TLS → Origin Server → Create Certificate.
 Default validity is 15 years; no Let's Encrypt renewal needed because the

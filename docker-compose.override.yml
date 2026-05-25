@@ -1,0 +1,59 @@
+# LAN/dev override — auto-loaded by `docker compose` when this file sits next
+# to docker-compose.yml. Plain `docker compose up -d --build` merges this on
+# top of the base, no flags needed.
+#
+# IMPORTANT: on the VPS this would expose the api directly to the public
+# internet (bypassing nginx + Cloudflare). For production use the base file
+# only, explicitly:
+#   docker compose -f docker-compose.yml up -d --build
+#
+# What this changes vs the base (production) file:
+#   • api port published on 0.0.0.0:5000 (was loopback-only) — so phones and
+#     other machines on the LAN can reach the api directly for debugging
+#     (curl http://192.168.1.10:5000/healthz)
+#   • db port published on 127.0.0.1:5432 — psql / DBeaver from the host
+#     without exposing Postgres to the LAN
+#
+# What the base file already gets right for LAN testing:
+#   • web service exposes port 3000 on 0.0.0.0 (HTTP, no certs needed) —
+#     phones on the LAN dial this for pairing + SignalR
+#   • api service is reachable from web via the internal app-net network
+#
+# What you still need to set in .env for LAN mode:
+#   CORS_ORIGIN=http://<your-LAN-ip>:3000
+#   PAIRING_BASE_URL=http://<your-LAN-ip>:3000
+#
+# What you also need on the Android side (one-time):
+#   The agent's network_security_config.xml blocks cleartext HTTP by default.
+#   Edit android/app/src/main/res/xml/network_security_config.xml in your local
+#   checkout to add your LAN IP, e.g.:
+#       <domain includeSubdomains="true">192.168.1.10</domain>
+#   then rebuild the debug APK. Don't commit that edit — production uses HTTPS.
+
+services:
+  api:
+    # The base file binds api on 127.0.0.1:5000. Override that with a wide
+    # bind so the api is directly reachable from other machines on the LAN
+    # (handy for curl/Postman against http://<dev-machine-LAN-ip>:5000).
+    # The !override tag tells Compose to REPLACE the base ports list instead
+    # of merging it — without !override you'd end up with two bindings on
+    # port 5000 (one loopback, one wildcard) and the second one would fail.
+    ports: !override
+      - "5000:8080"
+
+  db:
+    # Loopback-only on the host: lets you run psql/DBeaver locally without
+    # exposing Postgres to the LAN. The base file publishes no ports for db,
+    # so this is a pure addition and doesn't need !override.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  web:
+    # Override the production conf mount with the plain-HTTP dev conf. nginx
+    # serves :80 only; no certs required. The base file mounts certs/ and
+    # nginx.prod.conf — the volumes list merges (Compose keys by target path),
+    # so this entry replaces the base's nginx.prod.conf mount at the same
+    # /etc/nginx/conf.d/default.conf target.
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro

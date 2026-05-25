@@ -63,14 +63,14 @@ This matches the one-viewer-per-device rule and avoids operating an SFU until th
 
 ```
 remote-desktop/
-├── docker-compose.yml              # Orchestrates backend, frontend, PostgreSQL, coturn, DDNS
+├── docker-compose.yml              # Orchestrates api, web, PostgreSQL, coturn, DDNS
 ├── .env                            # DB_PASSWORD, JWT_SECRET, TURN credentials, CLOUDFLARE_API_TOKEN
 ├── turnserver.conf                 # coturn configuration
 ├── certs/                          # Cloudflare Origin Certificate + private key
 │   ├── origin.pem
 │   └── origin-key.pem
 │
-├── backend/
+├── api/
 │   ├── Dockerfile                  # ASP.NET Core multi-stage build
 │   ├── RemoteDesktop.sln
 │   ├── RemoteDesktop/
@@ -105,9 +105,9 @@ remote-desktop/
 │   └── RemoteDesktop.Tests/
 │       └── ...
 │
-├── frontend/
+├── web/
 │   ├── Dockerfile                  # Node multi-stage build (build + nginx serve)
-│   ├── nginx.conf                  # Reverse proxy config (API + SignalR → backend, TLS via Cloudflare Origin Cert)
+│   ├── nginx.conf                  # Reverse proxy config (API + SignalR → api service, TLS via Cloudflare Origin Cert)
 │   ├── package.json
 │   ├── vite.config.ts
 │   ├── src/
@@ -165,9 +165,9 @@ services:
     networks:
       - app-net
 
-  backend:
+  api:
     build:
-      context: ./backend
+      context: ./api
       dockerfile: Dockerfile
     ports:
       - "5000:8080"
@@ -183,14 +183,14 @@ services:
     networks:
       - app-net
 
-  frontend:
+  web:
     build:
-      context: ./frontend
+      context: ./web
       dockerfile: Dockerfile
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      - api
     restart: unless-stopped
     networks:
       - app-net
@@ -251,16 +251,16 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Proxy API requests to backend
+    # Proxy API requests to the api service
     location /api/ {
-        proxy_pass http://backend:8080;
+        proxy_pass http://api:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
 
-    # Proxy SignalR WebSocket to backend
+    # Proxy SignalR WebSocket to the api service
     location /hubs/ {
-        proxy_pass http://backend:8080;
+        proxy_pass http://api:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -273,8 +273,8 @@ server {
 ### Development Workflow
 
 - **`docker compose up --build`** — builds and starts both containers. Frontend available at `localhost:3000`, API at `localhost:5000`.
-- **`docker compose up backend`** — run only the backend (for frontend dev with Vite's dev server + proxy).
-- **Local dev without Docker** — `cd backend && dotnet run` and `cd frontend && npm run dev` with Vite proxy configured to forward `/api` and `/hubs` to `localhost:5000`.
+- **`docker compose up api`** — run only the api (for web dev with Vite's dev server + proxy).
+- **Local dev without Docker** — `cd api && dotnet run` and `cd web && npm run dev` with Vite proxy configured to forward `/api` and `/hubs` to `localhost:5000`.
 - **Deployment** — `docker compose up -d` on the server. For arm64, the .NET and Node base images support multi-arch natively. No cross-compilation needed if building directly on the server.
 
 ### Server Docker Considerations
