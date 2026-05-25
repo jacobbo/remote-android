@@ -143,11 +143,11 @@ sudo usermod -aG docker deploy
 
 `adduser` prompts for a password — generate a strong one (`openssl rand -base64 24`) and store it in your password manager. You'll use it to ssh in as `deploy` from here on.
 
-Give the user ownership of `/srv/rdp`:
+Give the user ownership of `/srv/remote-android`:
 
 ```bash
-sudo mkdir -p /srv/rdp
-sudo chown deploy:deploy /srv/rdp
+sudo mkdir -p /srv/remote-android
+sudo chown deploy:deploy /srv/remote-android
 ```
 
 Install fail2ban — SSH on a public IP gets scanned constantly, and password auth is exactly the threat model fail2ban handles. Defaults are sensible; no tuning needed:
@@ -188,8 +188,9 @@ The app doesn't rate-limit — bcrypt slows brute-force naturally and pairing to
 ### 4. Clone and configure
 
 ```bash
-git clone <this repo> /srv/rdp
-cd /srv/rdp
+cd /srv
+git clone <this repo>
+cd /srv/remote-android
 cp .env.example .env
 nano .env  # fill in secrets (see below)
 ```
