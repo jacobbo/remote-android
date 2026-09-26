@@ -92,7 +92,17 @@ class AgentService : LifecycleService() {
                         Log.i(TAG, "Watchdog: connection restored")
                         disconnectedAtMs = 0L
                     }
-                } else if (signalR != null) {
+                } else if (workJob?.isActive != true) {
+                    // workJob ended on its own (hub closed → status loop exited,
+                    // or REST connect / SignalR start threw). Its finally block
+                    // nulls signalR, so without this branch nothing would ever
+                    // reconnect. The 15 s tick doubles as the retry backoff.
+                    Log.w(TAG, "Watchdog: workJob not running — reconnecting")
+                    disconnectedAtMs = 0L
+                    ensureRunning()
+                } else {
+                    // workJob is alive but not connected: either mid-connect or
+                    // wedged. Give it WATCHDOG_KILL_MS before force-restarting.
                     if (disconnectedAtMs == 0L) {
                         disconnectedAtMs = System.currentTimeMillis()
                         Log.w(TAG, "Watchdog: SignalR disconnected — starting timer")
@@ -119,6 +129,9 @@ class AgentService : LifecycleService() {
             } catch (t: Throwable) {
                 Log.e(TAG, "Watchdog tick threw", t)
             } finally {
+                // ensureRunning() also schedules the watchdog — drop that copy so
+                // restarts don't stack up duplicate tick chains.
+                watchdogHandler.removeCallbacks(this)
                 watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
             }
         }
